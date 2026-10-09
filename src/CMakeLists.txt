@@ -8,11 +8,13 @@ target_sources(rangequery_modules
       structures/ordered_vector/ordered_vector.cppm
       structures/std_set/std_set.cppm
       structures/avl/avl.cppm
+      structures/treap/treap.cppm
   PRIVATE
       config/config.cpp
       structures/ordered_vector/ordered_vector.cpp
       structures/std_set/std_set.cpp
       structures/avl/avl.cpp
+      structures/treap/treap.cpp
 )
 
 target_compile_features(rangequery_modules PUBLIC cxx_std_23)

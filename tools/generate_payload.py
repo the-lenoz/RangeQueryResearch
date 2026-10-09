@@ -18,8 +18,23 @@ class QueryWorkload:
     query_count: int
 
 
-def _make_values(rng: random.Random, data_size: int) -> list[int]:
-    return rng.sample(range(-1_000_000_000, 1_000_000_001), data_size)
+@dataclass(frozen=True)
+class InsertWorkload:
+    """Поток вставок с точным конечным размером множества."""
+
+    payload: str
+    data_size: int
+    command_count: int
+
+
+def _make_values(rng: random.Random, data_size: int, density: str) -> list[int]:
+    if density == "dense":
+        values = list(range(-data_size // 2, -data_size // 2 + data_size))
+        rng.shuffle(values)
+        return values
+    if density == "sparse":
+        return rng.sample(range(-1_000_000_000, 1_000_000_001), data_size)
+    raise ValueError("density должен быть dense или sparse")
 
 
 def _hot_index(rng: random.Random, data_size: int) -> int:
@@ -35,6 +50,7 @@ def build_query_workload(
     seed: int,
     locality: str = "uniform",
     query_kind: str = "mixed",
+    density: str = "sparse",
 ) -> QueryWorkload:
     """Создаёт множество точного размера, затем выполняет только запросы к нему.
 
@@ -45,7 +61,7 @@ def build_query_workload(
         raise ValueError("data_size и query_count должны быть положительными")
 
     rng = random.Random(seed)
-    values = _make_values(rng, data_size)
+    values = _make_values(rng, data_size, density)
     sorted_values = sorted(values)
     commands = [f"k {value}" for value in values]
     query_kinds = ("rank", "select", "range")
@@ -68,6 +84,31 @@ def build_query_workload(
     return QueryWorkload("\n".join(commands) + "\n", data_size, query_count)
 
 
+def build_insert_workload(
+    data_size: int,
+    seed: int,
+    density: str = "sparse",
+    insertion_order: str = "random",
+) -> InsertWorkload:
+    """Создаёт уникальные вставки со случайным, прямым или обратным порядком."""
+    if data_size < 1:
+        raise ValueError("data_size должен быть положительным")
+
+    values = _make_values(random.Random(seed), data_size, density)
+    if insertion_order == "ascending":
+        values.sort()
+    elif insertion_order == "descending":
+        values.sort(reverse=True)
+    elif insertion_order != "random":
+        raise ValueError("insertion_order должен быть random, ascending или descending")
+
+    return InsertWorkload(
+        "\n".join(f"k {value}" for value in values) + "\n",
+        data_size,
+        len(values),
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -76,11 +117,12 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--locality", choices=("uniform", "hotspot"), default="uniform")
     parser.add_argument("--query-kind", choices=("mixed", "rank", "select", "range"), default="mixed")
+    parser.add_argument("--density", choices=("dense", "sparse"), default="sparse")
     args = parser.parse_args()
 
     try:
         workload = build_query_workload(
-            args.data_size, args.query_count, args.seed, args.locality, args.query_kind
+            args.data_size, args.query_count, args.seed, args.locality, args.query_kind, args.density
         )
     except ValueError as error:
         parser.error(str(error))

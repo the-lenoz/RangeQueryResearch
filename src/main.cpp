@@ -1,10 +1,11 @@
+#include <iostream>
+#include <variant>
+
 import rangequery.config;
 import rangequery.structures.avl;
 import rangequery.structures.ordered_vector;
 import rangequery.structures.std_set;
-
-#include <iostream>
-#include <variant>
+import rangequery.structures.treap;
 
 namespace {
 
@@ -60,7 +61,8 @@ int run_commands(Set& structure) {
 
 using SelectedStructure = std::variant<rq::structures::OrderedVector,
                                        rq::structures::StdSet,
-                                       rq::structures::AvlTree>;
+                                       rq::structures::AvlTree,
+                                       rq::structures::Treap>;
 
 }  // namespace
 
@@ -68,7 +70,7 @@ int main(int argc, char* argv[]) {
   const auto settings = rq::read_command_line(argc, argv);
 
   if (settings.show_help) {
-    std::cout << "Usage: rangequery --structure <vector|set|avl>\n";
+    std::cout << "Usage: rangequery --structure <vector|set|avl|treap>\n";
     return 0;
   }
 
@@ -86,6 +88,9 @@ int main(int argc, char* argv[]) {
       break;
     case rq::StructureKind::avl:
       structure.emplace<rq::structures::AvlTree>();
+      break;
+    case rq::StructureKind::treap:
+      structure.emplace<rq::structures::Treap>();
       break;
   }
 
