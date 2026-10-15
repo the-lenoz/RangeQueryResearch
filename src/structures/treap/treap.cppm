@@ -13,8 +13,10 @@ class Treap final {
  public:
   Treap();
   ~Treap();
-  Treap(const Treap&) = delete;
-  Treap& operator=(const Treap&) = delete;
+  Treap(const Treap& other);
+  Treap& operator=(const Treap& other);
+  Treap(Treap&& other) noexcept;
+  Treap& operator=(Treap&& other) noexcept;
 
   void insert(int value);
   [[nodiscard]] Count count_less(int value) const;

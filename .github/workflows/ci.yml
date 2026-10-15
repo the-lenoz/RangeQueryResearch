@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: Formatting
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Check C++ formatting
+        run: >-
+          find src tests -type f \( -name '*.cpp' -o -name '*.cppm' \) -print0
+          | sort -z
+          | xargs -0 clang-format-18 --dry-run --Werror
+
+  build-and-test:
+    name: ${{ matrix.preset }} / GCC 16
+    runs-on: ubuntu-24.04
+    container: gcc:16.2.0-trixie
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [debug, release, sanitizers]
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends libgtest-dev ninja-build python3 python3-pip
+          python3 -m pip install --break-system-packages --no-cache-dir cmake==4.4.3
+
+      - name: Report toolchain
+        run: |
+          g++ --version
+          cmake --version
+          ninja --version
+          python3 --version
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} --parallel 2
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: Smoke-test benchmark harness
+        if: matrix.preset == 'release'
+        run: |
+          python3 tools/benchmark.py \
+            --runner build/release/src/rangequery_benchmark \
+            --output benchmark-results/smoke.csv \
+            --data-sizes 100 \
+            --query-count 100 \
+            --query-kind mixed \
+            --repetitions 1 \
+            --build-config Release

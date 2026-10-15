@@ -33,7 +33,8 @@ Settings read_command_line(int argc, char* argv[]) {
     }
     if (equals(argument, "--structure") && index + 1 < argc) {
       settings.structure = parse_structure(argv[++index], settings.valid);
-      if (!settings.valid) settings.error_message = "unknown structure; expected vector, set, avl, or treap";
+      if (!settings.valid)
+        settings.error_message = "unknown structure; expected vector, set, avl, or treap";
     } else if (equals(argument, "--structure")) {
       settings.valid = false;
       settings.error_message = "--structure requires vector, set, avl, or treap";
@@ -47,10 +48,14 @@ Settings read_command_line(int argc, char* argv[]) {
 
 const char* to_string(StructureKind kind) {
   switch (kind) {
-    case StructureKind::ordered_vector: return "ordered_vector";
-    case StructureKind::std_set: return "std_set";
-    case StructureKind::avl: return "avl";
-    case StructureKind::treap: return "treap";
+    case StructureKind::ordered_vector:
+      return "ordered_vector";
+    case StructureKind::std_set:
+      return "std_set";
+    case StructureKind::avl:
+      return "avl";
+    case StructureKind::treap:
+      return "treap";
   }
   return "unknown";
 }

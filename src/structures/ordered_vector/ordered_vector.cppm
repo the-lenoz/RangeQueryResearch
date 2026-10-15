@@ -13,8 +13,10 @@ class OrderedVector final {
  public:
   OrderedVector();
   ~OrderedVector();
-  OrderedVector(const OrderedVector&) = delete;
-  OrderedVector& operator=(const OrderedVector&) = delete;
+  OrderedVector(const OrderedVector& other);
+  OrderedVector& operator=(const OrderedVector& other);
+  OrderedVector(OrderedVector&& other) noexcept;
+  OrderedVector& operator=(OrderedVector&& other) noexcept;
 
   void insert(int value);
   [[nodiscard]] Count count_less(int value) const;
@@ -27,4 +29,4 @@ class OrderedVector final {
   std::experimental::propagate_const<std::unique_ptr<Impl>> impl_;
 };
 
-}
+}  // namespace rq::structures

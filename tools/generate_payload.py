@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import bisect
 import random
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,7 @@ class QueryWorkload:
     payload: str
     data_size: int
     query_count: int
+    expected_checksum: str
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,53 @@ class InsertWorkload:
     payload: str
     data_size: int
     command_count: int
+    expected_checksum: str
+
+
+FNV_OFFSET = 14_695_981_039_346_656_037
+FNV_PRIME = 1_099_511_628_211
+UINT64_MASK = (1 << 64) - 1
+
+
+def checksum_record(checksum: int, code: str, has_value: bool, value: int) -> int:
+    """Добавляет один типизированный результат в стабильный FNV-1a checksum."""
+    encoded = bytes((ord(code), int(has_value))) + (value & UINT64_MASK).to_bytes(8, "little")
+    for byte in encoded:
+        checksum ^= byte
+        checksum = (checksum * FNV_PRIME) & UINT64_MASK
+    return checksum
+
+
+def checksum_text(checksum: int) -> str:
+    return f"{checksum:016x}"
+
+
+def insert_validation_checksum(values: list[int]) -> str:
+    """Вычисляет ожидаемый набор дешёвых проб итогового множества."""
+    sorted_values = sorted(set(values))
+    checksum = checksum_record(FNV_OFFSET, "s", True, len(sorted_values))
+    indices = sorted(
+        {
+            1,
+            1 + len(sorted_values) // 4,
+            1 + len(sorted_values) // 2,
+            1 + (3 * len(sorted_values)) // 4,
+            len(sorted_values),
+        }
+    )
+    for index in indices:
+        checksum = checksum_record(checksum, "m", True, sorted_values[index - 1])
+    probes = [
+        -(1 << 31),
+        0,
+        (1 << 31) - 1,
+        sorted_values[0],
+        sorted_values[len(sorted_values) // 2],
+        sorted_values[-1],
+    ]
+    for probe in probes:
+        checksum = checksum_record(checksum, "n", True, bisect.bisect_left(sorted_values, probe))
+    return checksum_text(checksum)
 
 
 def _make_values(rng: random.Random, data_size: int, density: str) -> list[int]:
@@ -65,6 +114,7 @@ def build_query_workload(
     sorted_values = sorted(values)
     commands = [f"k {value}" for value in values]
     query_kinds = ("rank", "select", "range")
+    checksum = FNV_OFFSET
 
     for _ in range(query_count):
         kind = rng.choice(query_kinds) if query_kind == "mixed" else query_kind
@@ -73,15 +123,20 @@ def build_query_workload(
 
         if kind == "select":
             commands.append(f"m {index + 1}")
+            checksum = checksum_record(checksum, "m", True, value)
         elif kind == "rank":
             commands.append(f"n {value}")
+            checksum = checksum_record(checksum, "n", True, index)
         else:
             width = max(1, data_size // 100)
             left_index = max(0, index - width)
             right_index = min(data_size - 1, index + width)
             commands.append(f"q {sorted_values[left_index]} {sorted_values[right_index]}")
+            checksum = checksum_record(checksum, "q", True, right_index - left_index)
 
-    return QueryWorkload("\n".join(commands) + "\n", data_size, query_count)
+    return QueryWorkload(
+        "\n".join(commands) + "\n", data_size, query_count, checksum_text(checksum)
+    )
 
 
 def build_insert_workload(
@@ -106,6 +161,7 @@ def build_insert_workload(
         "\n".join(f"k {value}" for value in values) + "\n",
         data_size,
         len(values),
+        insert_validation_checksum(values),
     )
 
 

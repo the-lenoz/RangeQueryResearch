@@ -13,8 +13,10 @@ class StdSet final {
  public:
   StdSet();
   ~StdSet();
-  StdSet(const StdSet&) = delete;
-  StdSet& operator=(const StdSet&) = delete;
+  StdSet(const StdSet& other);
+  StdSet& operator=(const StdSet& other);
+  StdSet(StdSet&& other) noexcept;
+  StdSet& operator=(StdSet&& other) noexcept;
 
   void insert(int value);
   [[nodiscard]] Count count_less(int value) const;

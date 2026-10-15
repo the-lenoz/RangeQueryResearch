@@ -21,3 +21,6 @@ target_compile_features(rangequery_modules PUBLIC cxx_std_23)
 
 add_executable(rangequery main.cpp)
 target_link_libraries(rangequery PRIVATE rangequery_modules)
+
+add_executable(rangequery_benchmark benchmark/main.cpp)
+target_link_libraries(rangequery_benchmark PRIVATE rangequery_modules)

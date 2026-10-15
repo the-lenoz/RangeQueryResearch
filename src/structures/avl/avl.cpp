@@ -2,6 +2,8 @@ module;
 
 #include <algorithm>
 #include <memory>
+#include <utility>
+#include <vector>
 
 module rangequery.structures.avl;
 
@@ -18,6 +20,56 @@ struct AvlTree::Impl {
   };
 
   std::unique_ptr<Node> root;
+  std::vector<std::unique_ptr<Node>*> insertion_path;
+
+  Impl() = default;
+  Impl(const Impl& other) : root(clone(other.root)) {}
+  ~Impl() { clear(root); }
+
+  static void clear(std::unique_ptr<Node>& node) noexcept {
+    while (node) {
+      if (node->left) {
+        auto left = std::move(node->left);
+        node->left = std::move(left->right);
+        left->right = std::move(node);
+        node = std::move(left);
+      } else {
+        node = std::move(node->right);
+      }
+    }
+  }
+
+  static std::unique_ptr<Node> clone(const std::unique_ptr<Node>& node) {
+    if (!node) return {};
+    auto copy = std::make_unique<Node>(node->key);
+    copy->height = node->height;
+    copy->subtree_size = node->subtree_size;
+    std::vector<std::pair<const Node*, Node*>> pending{{node.get(), copy.get()}};
+
+    try {
+      while (!pending.empty()) {
+        const auto [source, destination] = pending.back();
+        pending.pop_back();
+
+        if (source->left) {
+          destination->left = std::make_unique<Node>(source->left->key);
+          destination->left->height = source->left->height;
+          destination->left->subtree_size = source->left->subtree_size;
+          pending.emplace_back(source->left.get(), destination->left.get());
+        }
+        if (source->right) {
+          destination->right = std::make_unique<Node>(source->right->key);
+          destination->right->height = source->right->height;
+          destination->right->subtree_size = source->right->subtree_size;
+          pending.emplace_back(source->right.get(), destination->right.get());
+        }
+      }
+    } catch (...) {
+      clear(copy);
+      throw;
+    }
+    return copy;
+  }
 
   static unsigned height(const std::unique_ptr<Node>& node) { return node ? node->height : 0; }
   static Count size(const std::unique_ptr<Node>& node) { return node ? node->subtree_size : 0; }
@@ -63,55 +115,103 @@ struct AvlTree::Impl {
     }
   }
 
-  static void insert(std::unique_ptr<Node>& node, int value) {
-    if (!node) {
-      node = std::make_unique<Node>(value);
-      return;
+  static void insert(std::unique_ptr<Node>& node, int value,
+                     std::vector<std::unique_ptr<Node>*>& path) {
+    path.clear();
+    auto* link = &node;
+
+    while (*link) {
+      if (value == (*link)->key) return;
+      path.push_back(link);
+      link = value < (*link)->key ? &(*link)->left : &(*link)->right;
     }
-    if (value < node->key) {
-      insert(node->left, value);
-    } else if (value > node->key) {
-      insert(node->right, value);
-    } else {
-      return;
+
+    *link = std::make_unique<Node>(value);
+    while (!path.empty()) {
+      rebalance(*path.back());
+      path.pop_back();
     }
-    rebalance(node);
   }
 
   static Count count_less(const std::unique_ptr<Node>& node, const int value) {
-    if (!node) return 0;
-    if (value <= node->key) return count_less(node->left, value);
-    return size(node->left) + 1 + count_less(node->right, value);
+    Count result = 0;
+    const Node* current = node.get();
+    while (current) {
+      if (value <= current->key) {
+        current = current->left.get();
+      } else {
+        result += size(current->left) + 1;
+        current = current->right.get();
+      }
+    }
+    return result;
   }
 
   static Count count_less_or_equal(const std::unique_ptr<Node>& node, const int value) {
-    if (!node) return 0;
-    if (value < node->key) return count_less_or_equal(node->left, value);
-    return size(node->left) + 1 + count_less_or_equal(node->right, value);
+    Count result = 0;
+    const Node* current = node.get();
+    while (current) {
+      if (value < current->key) {
+        current = current->left.get();
+      } else {
+        result += size(current->left) + 1;
+        current = current->right.get();
+      }
+    }
+    return result;
   }
 
   static Selection select(const std::unique_ptr<Node>& node, const Count index) {
     if (!node || index == 0 || index > size(node)) return {};
-    const Count left_size = size(node->left);
-    if (index == left_size + 1) return Selection{true, node->key};
-    if (index <= left_size) return select(node->left, index);
-    return select(node->right, index - left_size - 1);
+    Count remaining = index;
+    const Node* current = node.get();
+    while (current) {
+      const Count left_size = size(current->left);
+      if (remaining == left_size + 1) return Selection{true, current->key};
+      if (remaining <= left_size) {
+        current = current->left.get();
+      } else {
+        remaining -= left_size + 1;
+        current = current->right.get();
+      }
+    }
+    return {};
   }
 };
 
 AvlTree::AvlTree() : impl_(std::make_unique<Impl>()) {}
 AvlTree::~AvlTree() = default;
+AvlTree::AvlTree(const AvlTree& other) {
+  if (other.impl_) impl_ = std::make_unique<Impl>(*other.impl_);
+}
+AvlTree& AvlTree::operator=(const AvlTree& other) {
+  if (this == &other) return *this;
+  std::unique_ptr<Impl> replacement;
+  if (other.impl_) replacement = std::make_unique<Impl>(*other.impl_);
+  impl_ = std::move(replacement);
+  return *this;
+}
+AvlTree::AvlTree(AvlTree&& other) noexcept = default;
+AvlTree& AvlTree::operator=(AvlTree&& other) noexcept {
+  if (this != &other) impl_ = std::move(other.impl_);
+  return *this;
+}
 
-void AvlTree::insert(const int value) { Impl::insert(impl_->root, value); }
-Count AvlTree::count_less(const int value) const { return Impl::count_less(impl_->root, value); }
+void AvlTree::insert(const int value) {
+  if (!impl_) impl_ = std::make_unique<Impl>();
+  Impl::insert(impl_->root, value, impl_->insertion_path);
+}
+Count AvlTree::count_less(const int value) const {
+  return impl_ ? Impl::count_less(impl_->root, value) : 0;
+}
 Count AvlTree::count_in_open_closed_range(const int left, const int right) const {
-  if (left >= right) return 0;
+  if (!impl_ || left >= right) return 0;
   return Impl::count_less_or_equal(impl_->root, right) -
          Impl::count_less_or_equal(impl_->root, left);
 }
 Selection AvlTree::select(const Count one_based_index) const {
-  return Impl::select(impl_->root, one_based_index);
+  return impl_ ? Impl::select(impl_->root, one_based_index) : Selection{};
 }
-Count AvlTree::size() const { return Impl::size(impl_->root); }
+Count AvlTree::size() const { return impl_ ? Impl::size(impl_->root) : 0; }
 
 }  // namespace rq::structures

@@ -36,6 +36,16 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "sanitizers",
+      "displayName": "Сборка с санитайзерами",
+      "description": "Отладочная сборка с AddressSanitizer и UndefinedBehaviorSanitizer",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "RANGEQUERY_ENABLE_SANITIZERS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -46,6 +56,10 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "sanitizers",
+      "configurePreset": "sanitizers"
     }
   ],
   "testPresets": [
@@ -59,6 +73,13 @@
     {
       "name": "release",
       "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "sanitizers",
+      "configurePreset": "sanitizers",
       "output": {
         "outputOnFailure": true
       }

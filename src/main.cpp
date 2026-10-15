@@ -59,10 +59,8 @@ int run_commands(Set& structure) {
   return 0;
 }
 
-using SelectedStructure = std::variant<rq::structures::OrderedVector,
-                                       rq::structures::StdSet,
-                                       rq::structures::AvlTree,
-                                       rq::structures::Treap>;
+using SelectedStructure = std::variant<rq::structures::OrderedVector, rq::structures::StdSet,
+                                       rq::structures::AvlTree, rq::structures::Treap>;
 
 }  // namespace
 

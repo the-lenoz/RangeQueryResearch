@@ -13,8 +13,10 @@ class AvlTree final {
  public:
   AvlTree();
   ~AvlTree();
-  AvlTree(const AvlTree&) = delete;
-  AvlTree& operator=(const AvlTree&) = delete;
+  AvlTree(const AvlTree& other);
+  AvlTree& operator=(const AvlTree& other);
+  AvlTree(AvlTree&& other) noexcept;
+  AvlTree& operator=(AvlTree&& other) noexcept;
 
   void insert(int value);
   [[nodiscard]] Count count_less(int value) const;

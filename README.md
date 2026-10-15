@@ -10,13 +10,21 @@ cmake --build --preset debug
 ctest --preset debug
 ```
 
-Доступны пресеты `debug` для разработки и `release` для бенчмарков. Оба используют Ninja и создают изолированные каталоги `build/<preset>`.
+Доступны пресеты `debug` для разработки, `release` для бенчмарков и
+`sanitizers` для проверки AddressSanitizer и UndefinedBehaviorSanitizer. Все они используют Ninja и
+создают изолированные каталоги `build/<preset>`.
+
+```sh
+cmake --preset sanitizers
+cmake --build --preset sanitizers
+ctest --preset sanitizers
+```
 
 Проект требует CMake 3.28 или новее и компилятор с поддержкой сканирования зависимостей C++ modules. Текущая конфигурация проверена с GCC 16 и CMake 4.4.
 
 ## Структура проекта
 
-- `src/` — модули C++ и исполняемый файл CLI `rangequery`;
+- `src/` — модули C++, CLI `rangequery` и изолированный runner `rangequery_benchmark`;
 - `tests/` — поведенческие тесты и тесты контрактов на GoogleTest;
 - `tools/` — детерминированный генератор payload и запускатель бенчмарков;
 - `notebooks/benchmark_results.ipynb` — воспроизводимый анализ результатов бенчмарков;
@@ -26,31 +34,37 @@ ctest --preset debug
 
 ## Бенчмарки
 
-Для асимптотических графиков используется размер множества `data_size`, а не длина потока команд. Каждый входной поток сначала вставляет ровно `data_size` уникальных ключей, затем выполняет заданное число запросов. Время нормируется на все команды потока: вставки подготовки тоже являются частью измеряемой нагрузки.
+Для асимптотических графиков используется размер множества `data_size`, а не длина потока команд. Отдельный C++ runner заранее читает и разбирает весь workload. В query-сценариях он также строит множество до запуска таймера и измеряет только `q`, `m` и `n`; в insert-сценариях измеряются все `k`.
+
+Основная метрика — wall time операций структуры по `std::chrono::steady_clock`. Process CPU time записывается как дополнительная диагностика. Parsing, setup query-сценария, запуск и завершение процесса, обмен через stdin/stdout, проверка результата и форматирование JSON в измерение не входят. Аллокации внутри самой операции структуры входят.
 
 ```sh
 python3 tools/benchmark.py \
-  --binary build/release/src/rangequery \
+  --runner build/release/src/rangequery_benchmark \
   --output benchmark-results/scaling.csv \
   --data-sizes 1000 10000 100000 \
   --query-count 1000 \
   --query-kind rank \
-  --density sparse
+  --density sparse \
+  --build-config Release
 ```
 
 Для проверки локальности обращений используются одинаковые множества среднего размера и большое количество запросов; `hotspot` концентрирует их вокруг центральных 5 % ключей.
 
 ```sh
 python3 tools/benchmark.py \
-  --binary build/release/src/rangequery \
+  --runner build/release/src/rangequery_benchmark \
   --output benchmark-results/locality.csv \
   --data-sizes 1000 3000 10000 \
   --query-count 100000 \
   --query-kind rank \
-  --localities uniform hotspot
+  --localities uniform hotspot \
+  --build-config Release
 ```
 
-CSV содержит `data_size`, `query_count`, общее число команд `command_count`, плотность ключей, порядок вставки, локальность, тип операции, конфигурацию запуска и время. Поле `ns_per_operation` — это среднее время одной команды `k`, `q`, `m` или `n` в полном входном потоке.
+CSV schema version 2 отдельно хранит `setup_operation_count`, `measured_operation_count` и полное `command_count`. Основная величина для графиков — `wall_ns_per_operation`; `cpu_ns_per_operation` предназначена для диагностики. Поля `measurement_scope=structure_operations`, `wall_clock=steady_clock` и `cpu_clock` фиксируют методику измерения.
+
+После каждого измерения runner вне таймера повторяет запросы либо проверяет итоговое состояние после вставок и возвращает стабильный FNV-1a checksum. Python независимо вычисляет ожидаемое значение и не записывает CSV, если checksum или число измеренных операций не совпали. Эта sanity-проверка защищает результаты эксперимента, но не заменяет полные контрактные тесты.
 
 Сценарий `regimes` сравнивает структуры не по заранее выбранной «лучшей» операции, а по диапазонам размера и плотности. Внутри каждого режима все четыре структуры получают один и тот же входной поток.
 
@@ -68,7 +82,8 @@ CSV содержит `data_size`, `query_count`, общее число кома�
 
 ```sh
 python3 tools/benchmark.py \
-  --binary build/release/src/rangequery \
+  --runner build/release/src/rangequery_benchmark \
   --output benchmark-results/regimes.csv \
-  --scenario regimes
+  --scenario regimes \
+  --build-config Release
 ```
