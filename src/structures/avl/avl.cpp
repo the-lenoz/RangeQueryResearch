@@ -24,7 +24,9 @@ struct AvlTree::Impl {
 
   Impl() = default;
   Impl(const Impl& other) : root(clone(other.root)) {}
-  ~Impl() { clear(root); }
+  ~Impl() {
+    clear(root);
+  }
 
   static void clear(std::unique_ptr<Node>& node) noexcept {
     while (node) {
@@ -71,8 +73,12 @@ struct AvlTree::Impl {
     return copy;
   }
 
-  static unsigned height(const std::unique_ptr<Node>& node) { return node ? node->height : 0; }
-  static Count size(const std::unique_ptr<Node>& node) { return node ? node->subtree_size : 0; }
+  static unsigned height(const std::unique_ptr<Node>& node) {
+    return node ? node->height : 0;
+  }
+  static Count size(const std::unique_ptr<Node>& node) {
+    return node ? node->subtree_size : 0;
+  }
 
   static void update(Node& node) {
     node.height = 1 + std::max(height(node.left), height(node.right));
@@ -212,6 +218,8 @@ Count AvlTree::count_in_open_closed_range(const int left, const int right) const
 Selection AvlTree::select(const Count one_based_index) const {
   return impl_ ? Impl::select(impl_->root, one_based_index) : Selection{};
 }
-Count AvlTree::size() const { return impl_ ? Impl::size(impl_->root) : 0; }
+Count AvlTree::size() const {
+  return impl_ ? Impl::size(impl_->root) : 0;
+}
 
 }  // namespace rq::structures

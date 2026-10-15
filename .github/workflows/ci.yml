@@ -21,11 +21,18 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Install clang-format 18
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends clang-format-18
+
       - name: Check C++ formatting
-        run: >-
-          find src tests -type f \( -name '*.cpp' -o -name '*.cppm' \) -print0
-          | sort -z
-          | xargs -0 clang-format-18 --dry-run --Werror
+        shell: bash
+        run: |
+          mapfile -d '' sources < <(
+            find src tests -type f \( -name '*.cpp' -o -name '*.cppm' \) -print0 | sort -z
+          )
+          clang-format-18 --dry-run --Werror "${sources[@]}"
 
   build-and-test:
     name: ${{ matrix.preset }} / GCC 16

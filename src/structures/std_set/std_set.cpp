@@ -54,6 +54,8 @@ Selection StdSet::select(const Count one_based_index) const {
   return Selection{true, *position};
 }
 
-Count StdSet::size() const { return impl_ ? impl_->values.size() : 0; }
+Count StdSet::size() const {
+  return impl_ ? impl_->values.size() : 0;
+}
 
 }  // namespace rq::structures

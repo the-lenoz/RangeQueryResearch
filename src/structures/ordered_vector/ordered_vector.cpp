@@ -56,6 +56,8 @@ Selection OrderedVector::select(const Count one_based_index) const {
   return Selection{true, impl_->values[static_cast<std::size_t>(one_based_index - 1)]};
 }
 
-Count OrderedVector::size() const { return impl_ ? impl_->values.size() : 0; }
+Count OrderedVector::size() const {
+  return impl_ ? impl_->values.size() : 0;
+}
 
 }  // namespace rq::structures

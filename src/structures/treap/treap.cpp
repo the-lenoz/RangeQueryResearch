@@ -30,7 +30,9 @@ struct Treap::Impl {
 
   Impl() = default;
   Impl(const Impl& other) : root(clone(other.root)), random(other.random) {}
-  ~Impl() { clear(root); }
+  ~Impl() {
+    clear(root);
+  }
 
   static void clear(std::unique_ptr<Node>& node) noexcept {
     while (node) {
@@ -74,9 +76,13 @@ struct Treap::Impl {
     return copy;
   }
 
-  static Count size(const std::unique_ptr<Node>& node) { return node ? node->subtree_size : 0; }
+  static Count size(const std::unique_ptr<Node>& node) {
+    return node ? node->subtree_size : 0;
+  }
 
-  static void update(Node& node) { node.subtree_size = 1 + size(node.left) + size(node.right); }
+  static void update(Node& node) {
+    node.subtree_size = 1 + size(node.left) + size(node.right);
+  }
 
   static void rotate_left(std::unique_ptr<Node>& node) {
     auto pivot = std::move(node->right);
@@ -201,6 +207,8 @@ Count Treap::count_in_open_closed_range(const int left, const int right) const {
 Selection Treap::select(const Count one_based_index) const {
   return impl_ ? Impl::select(impl_->root, one_based_index) : Selection{};
 }
-Count Treap::size() const { return impl_ ? Impl::size(impl_->root) : 0; }
+Count Treap::size() const {
+  return impl_ ? Impl::size(impl_->root) : 0;
+}
 
 }  // namespace rq::structures

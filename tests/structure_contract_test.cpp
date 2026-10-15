@@ -1,6 +1,6 @@
+#include <gtest/gtest.h>
 #include <algorithm>
 #include <array>
-#include <gtest/gtest.h>
 
 #include <cstdint>
 #include <iterator>
@@ -176,14 +176,13 @@ TYPED_TEST(StructureBehaviorTest, EmptySetAnswersEveryQueryWithoutSpecialCases) 
   const TypeParam structure;
 
   EXPECT_EQ(structure.size(), 0ULL);
-  for (const int value : {std::numeric_limits<int>::min(), -1, 0, 1,
-                          std::numeric_limits<int>::max()}) {
+  for (const int value :
+       {std::numeric_limits<int>::min(), -1, 0, 1, std::numeric_limits<int>::max()}) {
     EXPECT_EQ(structure.count_less(value), 0ULL) << "value=" << value;
   }
 
   for (const auto [left, right] :
-       std::array{std::pair{std::numeric_limits<int>::min(),
-                            std::numeric_limits<int>::max()},
+       std::array{std::pair{std::numeric_limits<int>::min(), std::numeric_limits<int>::max()},
                   std::pair{-1, 1}, std::pair{0, 0}, std::pair{1, -1}}) {
     EXPECT_EQ(structure.count_in_open_closed_range(left, right), 0ULL)
         << "range=(" << left << ", " << right << ']';
