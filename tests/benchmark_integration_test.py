@@ -18,10 +18,12 @@ sys.path.insert(0, str(TOOLS))
 import benchmark  # noqa: E402
 from generate_payload import (  # noqa: E402
     FNV_OFFSET,
+    build_dynamic_workload,
     build_query_workload,
     checksum_record,
     checksum_text,
     insert_validation_checksum,
+    state_validation_checksum,
 )
 
 
@@ -53,6 +55,19 @@ k 2147483647
 k -2
 """
 INSERT_CHECKSUM = "214f856356040575"
+DYNAMIC_PAYLOAD = """\
+k -2147483648
+k 0
+k 2147483647
+k -2
+n 0
+m 2
+q -2 2147483647
+k 2
+n 2147483647
+m 5
+q 0 2
+"""
 
 
 class BenchmarkChecks(unittest.TestCase):
@@ -62,9 +77,14 @@ class BenchmarkChecks(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.runner = RUNNER
 
-    def execute(self, structure: str, mode: str, payload: str) -> subprocess.CompletedProcess[str]:
+    def execute(
+        self, structure: str, mode: str, payload: str, setup_count: int | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        arguments = [str(self.runner), "--structure", structure, "--mode", mode]
+        if setup_count is not None:
+            arguments.extend(("--setup-count", str(setup_count)))
         return subprocess.run(
-            [str(self.runner), "--structure", structure, "--mode", mode],
+            arguments,
             input=payload,
             text=True,
             capture_output=True,
@@ -72,9 +92,15 @@ class BenchmarkChecks(unittest.TestCase):
         )
 
     def assert_success(
-        self, structure: str, mode: str, payload: str, count: int, checksum: str
+        self,
+        structure: str,
+        mode: str,
+        payload: str,
+        count: int,
+        checksum: str,
+        setup_count: int | None = None,
     ) -> None:
-        completed = self.execute(structure, mode, payload)
+        completed = self.execute(structure, mode, payload, setup_count)
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stderr, "")
         result = benchmark.parse_runner_output(completed.stdout)
@@ -94,6 +120,23 @@ class BenchmarkChecks(unittest.TestCase):
             with self.subTest(structure=structure):
                 self.assert_success(structure, "insert", INSERT_PAYLOAD, 6, INSERT_CHECKSUM)
 
+    def test_dynamic_runner_for_every_structure(self) -> None:
+        checksum = FNV_OFFSET
+        checksum = checksum_record(checksum, "n", True, 2)
+        checksum = checksum_record(checksum, "m", True, -2)
+        checksum = checksum_record(checksum, "q", True, 2)
+        checksum = checksum_record(checksum, "n", True, 4)
+        checksum = checksum_record(checksum, "m", True, 2147483647)
+        checksum = checksum_record(checksum, "q", True, 1)
+        expected = checksum_text(
+            state_validation_checksum(checksum, [-2147483648, -2, 0, 2, 2147483647])
+        )
+        for structure in benchmark.STRUCTURES:
+            with self.subTest(structure=structure):
+                self.assert_success(
+                    structure, "dynamic", DYNAMIC_PAYLOAD, 8, expected, setup_count=3
+                )
+
     def test_workload_generator_expected_answers(self) -> None:
         for query_kind in ("rank", "select", "range", "mixed"):
             with self.subTest(query_kind=query_kind):
@@ -109,6 +152,29 @@ class BenchmarkChecks(unittest.TestCase):
                 result = benchmark.parse_runner_output(completed.stdout)
                 self.assertEqual(result["measured_operation_count"], workload.query_count)
                 self.assertEqual(result["validation_checksum"], workload.expected_checksum)
+
+    def test_dynamic_workload_has_exact_mix_and_is_deterministic(self) -> None:
+        first = build_dynamic_workload(31, 300, 10, 123)
+        second = build_dynamic_workload(31, 300, 10, 123)
+        self.assertEqual(first, second)
+        self.assertEqual(first.insert_count, 30)
+        self.assertEqual(first.successful_insert_count, 30)
+        self.assertEqual(first.final_data_size, 61)
+        self.assertEqual(first.query_count, 270)
+        self.assertEqual(
+            first.rank_query_count + first.select_query_count + first.range_query_count,
+            first.query_count,
+        )
+        self.assertLessEqual(
+            max(first.rank_query_count, first.select_query_count, first.range_query_count)
+            - min(first.rank_query_count, first.select_query_count, first.range_query_count),
+            1,
+        )
+        completed = self.execute("avl", "dynamic", first.payload, first.initial_data_size)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = benchmark.parse_runner_output(completed.stdout)
+        self.assertEqual(result["measured_operation_count"], first.measured_operation_count)
+        self.assertEqual(result["validation_checksum"], first.expected_checksum)
 
     def test_fnv_golden_values(self) -> None:
         checksum = checksum_record(FNV_OFFSET, "n", True, 0)
@@ -135,6 +201,36 @@ class BenchmarkChecks(unittest.TestCase):
         self.assertEqual(completed.returncode, 2)
         self.assertEqual(completed.stdout, "")
         self.assertNotEqual(completed.stderr, "")
+
+    def test_dynamic_mode_rejects_invalid_setup_boundary(self) -> None:
+        cases = (
+            (None, "k 1\nn 1\n"),
+            (2, "k 1\nn 1\nk 2\n"),
+            (2, "k 1\nk 2\n"),
+        )
+        for setup_count, payload in cases:
+            with self.subTest(setup_count=setup_count, payload=payload):
+                completed = self.execute("vector", "dynamic", payload, setup_count)
+                self.assertEqual(completed.returncode, 2)
+                self.assertEqual(completed.stdout, "")
+                self.assertNotEqual(completed.stderr, "")
+
+        completed = subprocess.run(
+            [
+                str(self.runner),
+                "--structure",
+                "vector",
+                "--mode",
+                "dynamic",
+                "--setup-count",
+                "invalid",
+            ],
+            input="k 1\nn 1\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2)
 
     def test_runner_json_parser_rejects_missing_and_negative_fields(self) -> None:
         valid = {
@@ -168,7 +264,34 @@ class BenchmarkChecks(unittest.TestCase):
         )
         with mock.patch.object(benchmark.subprocess, "run", return_value=completed):
             with self.assertRaisesRegex(RuntimeError, "checksum"):
-                benchmark.execute_case(Path("runner"), case, 0, {})
+                benchmark.execute_case(Path("runner"), case, 0, 1, {})
+
+    def test_dynamic_cases_share_payload_and_emit_schema_three_metadata(self) -> None:
+        cases = benchmark.dynamic_cases(100, 1_000, 10, 44)
+        self.assertEqual({case.payload for case in cases}, {cases[0].payload})
+        self.assertEqual({case.expected_checksum for case in cases}, {cases[0].expected_checksum})
+        case = cases[0]
+        runner_result = {
+            "wall_elapsed_ns": 1_000,
+            "cpu_elapsed_ns": 900,
+            "measured_operation_count": case.measured_operation_count,
+            "validation_checksum": case.expected_checksum,
+            "cpu_clock": "process",
+        }
+        completed = SimpleNamespace(
+            returncode=0, stdout=json.dumps(runner_result), stderr=""
+        )
+        with mock.patch.object(benchmark.subprocess, "run", return_value=completed) as run:
+            row = benchmark.execute_case(Path("runner"), case, 2, 3, {"build_config": "Release"})
+
+        self.assertEqual(row["benchmark_schema_version"], 3)
+        self.assertEqual(row["seed"], 44)
+        self.assertEqual(row["workload_seed"], 44)
+        self.assertEqual(row["execution_order"], 3)
+        self.assertEqual(row["measured_insert_count"], 100)
+        self.assertEqual(row["successful_insert_count"], 100)
+        self.assertEqual(row["insert_fraction"], 0.1)
+        self.assertIn("--setup-count", run.call_args.args[0])
 
 
 def main() -> None:

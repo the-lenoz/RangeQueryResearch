@@ -8,12 +8,20 @@ import csv
 import json
 import os
 import platform
+import random
 import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from generate_payload import InsertWorkload, QueryWorkload, build_insert_workload, build_query_workload
+from generate_payload import (
+    DynamicWorkload,
+    InsertWorkload,
+    QueryWorkload,
+    build_dynamic_workload,
+    build_insert_workload,
+    build_query_workload,
+)
 
 STRUCTURES = ("vector", "set", "avl", "treap")
 
@@ -35,6 +43,14 @@ class BenchmarkCase:
     locality: str
     density: str
     insertion_order: str
+    workload_seed: int
+    initial_data_size: int
+    final_data_size: int
+    measured_insert_count: int
+    successful_insert_count: int
+    rank_query_count: int
+    select_query_count: int
+    range_query_count: int
     expected_checksum: str
 
 
@@ -74,6 +90,9 @@ DATA_REGIMES = (
     ),
 )
 
+DYNAMIC_INSERT_PERCENTAGES = (1, 10, 50, 90)
+DYNAMIC_MEASURED_OPERATION_COUNTS = {1_000: 10_000, 10_000: 10_000, 100_000: 1_000}
+
 
 def query_case(
     structure: str,
@@ -107,6 +126,14 @@ def query_case(
         locality=locality,
         density=density,
         insertion_order="not_applicable",
+        workload_seed=seed,
+        initial_data_size=workload.data_size,
+        final_data_size=workload.data_size,
+        measured_insert_count=0,
+        successful_insert_count=0,
+        rank_query_count=workload.rank_query_count,
+        select_query_count=workload.select_query_count,
+        range_query_count=workload.range_query_count,
         expected_checksum=workload.expected_checksum,
     )
 
@@ -134,8 +161,55 @@ def insert_case(
         locality="not_applicable",
         density=density,
         insertion_order=insertion_order,
+        workload_seed=seed,
+        initial_data_size=0,
+        final_data_size=workload.data_size,
+        measured_insert_count=workload.command_count,
+        successful_insert_count=workload.data_size,
+        rank_query_count=0,
+        select_query_count=0,
+        range_query_count=0,
         expected_checksum=workload.expected_checksum,
     )
+
+
+def dynamic_cases(
+    initial_data_size: int,
+    measured_operation_count: int,
+    insert_percentage: int,
+    seed: int,
+) -> list[BenchmarkCase]:
+    """Один динамический поток, разделяемый всеми структурами без регенерации."""
+    workload: DynamicWorkload = build_dynamic_workload(
+        initial_data_size=initial_data_size,
+        measured_operation_count=measured_operation_count,
+        insert_percentage=insert_percentage,
+        seed=seed,
+    )
+    common = {
+        "profile": f"dynamic_{insert_percentage:02d}pct_insert",
+        "operation_kind": "dynamic_mixed",
+        "data_size": initial_data_size,
+        "payload": workload.payload,
+        "mode": "dynamic",
+        "setup_operation_count": initial_data_size,
+        "measured_operation_count": workload.measured_operation_count,
+        "command_count": initial_data_size + workload.measured_operation_count,
+        "query_count": workload.query_count,
+        "locality": "uniform",
+        "density": "sparse",
+        "insertion_order": "random_interleaved",
+        "workload_seed": seed,
+        "initial_data_size": workload.initial_data_size,
+        "final_data_size": workload.final_data_size,
+        "measured_insert_count": workload.insert_count,
+        "successful_insert_count": workload.successful_insert_count,
+        "rank_query_count": workload.rank_query_count,
+        "select_query_count": workload.select_query_count,
+        "range_query_count": workload.range_query_count,
+        "expected_checksum": workload.expected_checksum,
+    }
+    return [BenchmarkCase(structure=structure, **common) for structure in STRUCTURES]
 
 
 def comparison_cases(
@@ -210,9 +284,18 @@ def parse_runner_output(output: str) -> dict[str, int | str]:
     return result
 
 
-def execute_case(runner: Path, case: BenchmarkCase, repetition: int, metadata: dict[str, object]) -> dict[str, object]:
+def execute_case(
+    runner: Path,
+    case: BenchmarkCase,
+    repetition: int,
+    execution_order: int,
+    metadata: dict[str, object],
+) -> dict[str, object]:
+    arguments = [str(runner), "--structure", case.structure, "--mode", case.mode]
+    if case.mode == "dynamic":
+        arguments.extend(("--setup-count", str(case.setup_operation_count)))
     completed = subprocess.run(
-        [str(runner), "--structure", case.structure, "--mode", case.mode],
+        arguments,
         input=case.payload,
         text=True,
         capture_output=True,
@@ -237,19 +320,31 @@ def execute_case(runner: Path, case: BenchmarkCase, repetition: int, metadata: d
 
     return {
         **metadata,
-        "benchmark_schema_version": 2,
+        "seed": case.workload_seed,
+        "benchmark_schema_version": 3,
         "scenario": case.profile,
+        "workload_mode": case.mode,
         "operation_kind": case.operation_kind,
         "data_size": case.data_size,
+        "initial_data_size": case.initial_data_size,
+        "final_data_size": case.final_data_size,
         "setup_operation_count": case.setup_operation_count,
         "measured_operation_count": case.measured_operation_count,
+        "measured_insert_count": case.measured_insert_count,
+        "successful_insert_count": case.successful_insert_count,
         "query_count": case.query_count,
+        "rank_query_count": case.rank_query_count,
+        "select_query_count": case.select_query_count,
+        "range_query_count": case.range_query_count,
+        "insert_fraction": case.measured_insert_count / case.measured_operation_count,
         "command_count": case.command_count,
         "locality": case.locality,
         "density": case.density,
         "insertion_order": case.insertion_order,
         "structure": case.structure,
+        "workload_seed": case.workload_seed,
         "repetition": repetition,
+        "execution_order": execution_order,
         "wall_elapsed_ns": wall_elapsed_ns,
         "cpu_elapsed_ns": cpu_elapsed_ns,
         "wall_ns_per_operation": wall_elapsed_ns / case.measured_operation_count,
@@ -259,6 +354,30 @@ def execute_case(runner: Path, case: BenchmarkCase, repetition: int, metadata: d
         "wall_clock": "steady_clock",
         "cpu_clock": result["cpu_clock"],
     }
+
+
+def execute_repetition(
+    runner: Path,
+    cases: list[BenchmarkCase],
+    repetition: int,
+    metadata: dict[str, object],
+) -> list[dict[str, object]]:
+    """Запускает одинаковые cases в воспроизводимо перемешанном порядке структур."""
+    if not cases:
+        return []
+    ordered_cases = list(cases)
+    first = cases[0]
+    shuffle_seed = (
+        first.workload_seed * 1_000_003
+        + first.data_size * 101
+        + first.measured_insert_count * 17
+        + repetition
+    )
+    random.Random(shuffle_seed).shuffle(ordered_cases)
+    return [
+        execute_case(runner, case, repetition, execution_order, metadata)
+        for execution_order, case in enumerate(ordered_cases, start=1)
+    ]
 
 
 def main() -> None:
@@ -274,9 +393,12 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--scenario",
-        choices=("comparison", "regimes"),
+        choices=("comparison", "regimes", "dynamic"),
         default="comparison",
-        help="comparison запускает указанный общий поток; regimes — готовые режимы размера и плотности данных.",
+        help=(
+            "comparison запускает указанный общий поток; regimes — готовые режимы данных; "
+            "dynamic — матрицу чередующихся вставок и запросов."
+        ),
     )
     parser.add_argument(
         "--data-sizes",
@@ -291,6 +413,19 @@ def main() -> None:
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        help="Независимые seed потоков; если не указаны, используется единственный --seed.",
+    )
+    parser.add_argument(
+        "--insert-percentages",
+        type=int,
+        nargs="+",
+        default=list(DYNAMIC_INSERT_PERCENTAGES),
+        help="Точные проценты вставок для сценария dynamic.",
+    )
+    parser.add_argument(
         "--build-config",
         default="unspecified",
         help="Имя конфигурации сборки, записываемое в CSV.",
@@ -302,6 +437,8 @@ def main() -> None:
 
     if args.repetitions < 1 or args.query_count < 1 or any(size < 1 for size in args.data_sizes):
         parser.error("Размеры множеств, число запросов и число повторов должны быть положительными")
+    if any(percentage <= 0 or percentage >= 100 for percentage in args.insert_percentages):
+        parser.error("Проценты вставок должны находиться в диапазоне от 1 до 99")
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     metadata = {
@@ -315,24 +452,34 @@ def main() -> None:
             check=True,
         ).stdout.splitlines()[0],
         "build_config": args.build_config,
-        "seed": args.seed,
     }
     rows: list[dict[str, object]] = []
+    workload_seeds = args.seeds if args.seeds is not None else [args.seed]
 
     if args.scenario == "comparison":
-        for data_size in args.data_sizes:
-            cases = comparison_cases(
-                data_size, args.query_count, args.seed + data_size, args.localities, args.query_kind, args.density
-            )
-            for case in cases:
+        for seed in workload_seeds:
+            for data_size in args.data_sizes:
+                cases = comparison_cases(
+                    data_size, args.query_count, seed, args.localities, args.query_kind, args.density
+                )
                 for repetition in range(args.repetitions):
-                    rows.append(execute_case(args.runner, case, repetition, metadata))
-    else:
-        for regime in DATA_REGIMES:
-            for data_size in regime.data_sizes:
-                for case in regime_cases(regime, data_size, args.seed + data_size):
+                    rows.extend(execute_repetition(args.runner, cases, repetition, metadata))
+    elif args.scenario == "regimes":
+        for seed in workload_seeds:
+            for regime in DATA_REGIMES:
+                for data_size in regime.data_sizes:
+                    cases = regime_cases(regime, data_size, seed)
                     for repetition in range(args.repetitions):
-                        rows.append(execute_case(args.runner, case, repetition, metadata))
+                        rows.extend(execute_repetition(args.runner, cases, repetition, metadata))
+    else:
+        for seed in workload_seeds:
+            for data_size, measured_operation_count in DYNAMIC_MEASURED_OPERATION_COUNTS.items():
+                for insert_percentage in args.insert_percentages:
+                    cases = dynamic_cases(
+                        data_size, measured_operation_count, insert_percentage, seed
+                    )
+                    for repetition in range(args.repetitions):
+                        rows.extend(execute_repetition(args.runner, cases, repetition, metadata))
 
     with args.output.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))

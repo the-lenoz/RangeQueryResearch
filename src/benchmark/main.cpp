@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <ctime>
@@ -18,13 +19,15 @@ import rangequery.structures.treap;
 namespace {
 
 enum class StructureKind { vector, set, avl, treap };
-enum class BenchmarkMode { queries, insert };
+enum class BenchmarkMode { queries, insert, dynamic };
 
 struct Settings {
   StructureKind structure{StructureKind::vector};
   BenchmarkMode mode{BenchmarkMode::queries};
   bool has_structure{false};
   bool has_mode{false};
+  bool has_setup_count{false};
+  std::size_t setup_count{};
   bool valid{true};
   const char* error{nullptr};
 };
@@ -77,9 +80,24 @@ Settings read_settings(const int argc, char* argv[]) {
         settings.mode = BenchmarkMode::queries;
       } else if (value == "insert") {
         settings.mode = BenchmarkMode::insert;
+      } else if (value == "dynamic") {
+        settings.mode = BenchmarkMode::dynamic;
       } else {
         settings.valid = false;
-        settings.error = "unknown mode; expected queries or insert";
+        settings.error = "unknown mode; expected queries, insert, or dynamic";
+      }
+    } else if (argument == "--setup-count" && index + 1 < argc) {
+      const std::string_view value{argv[++index]};
+      std::size_t setup_count{};
+      const auto [end, conversion_error] =
+          std::from_chars(value.data(), value.data() + value.size(), setup_count);
+      if (conversion_error != std::errc{} || end != value.data() + value.size() ||
+          setup_count == 0) {
+        settings.valid = false;
+        settings.error = "--setup-count requires a positive integer";
+      } else {
+        settings.has_setup_count = true;
+        settings.setup_count = setup_count;
       }
     } else if (argument == "--structure") {
       settings.valid = false;
@@ -87,6 +105,9 @@ Settings read_settings(const int argc, char* argv[]) {
     } else if (argument == "--mode") {
       settings.valid = false;
       settings.error = "--mode requires a value";
+    } else if (argument == "--setup-count") {
+      settings.valid = false;
+      settings.error = "--setup-count requires a value";
     } else {
       settings.valid = false;
       settings.error = "unknown command-line argument";
@@ -99,6 +120,14 @@ Settings read_settings(const int argc, char* argv[]) {
   if (settings.valid && !settings.has_mode) {
     settings.valid = false;
     settings.error = "--mode is required";
+  }
+  if (settings.valid && settings.mode == BenchmarkMode::dynamic && !settings.has_setup_count) {
+    settings.valid = false;
+    settings.error = "dynamic mode requires --setup-count";
+  }
+  if (settings.valid && settings.mode != BenchmarkMode::dynamic && settings.has_setup_count) {
+    settings.valid = false;
+    settings.error = "--setup-count is only valid in dynamic mode";
   }
   return settings;
 }
@@ -137,18 +166,34 @@ bool read_commands(std::vector<Command>& commands, const char*& error) {
   return true;
 }
 
-bool validate_layout(const std::vector<Command>& commands, const BenchmarkMode mode,
+bool validate_layout(const std::vector<Command>& commands, const Settings& settings,
                      WorkloadLayout& layout, const char*& error) {
   if (commands.empty()) {
     error = "workload must not be empty";
     return false;
   }
-  if (mode == BenchmarkMode::insert) {
+  if (settings.mode == BenchmarkMode::insert) {
     if (std::ranges::any_of(commands, [](const Command& command) { return command.kind != 'k'; })) {
       error = "insert mode accepts only k commands";
       return false;
     }
     layout.measured_count = commands.size();
+    return true;
+  }
+
+  if (settings.mode == BenchmarkMode::dynamic) {
+    if (settings.setup_count >= commands.size()) {
+      error = "dynamic mode requires at least one measured command after setup";
+      return false;
+    }
+    if (std::ranges::any_of(commands.begin(),
+                            commands.begin() + static_cast<std::ptrdiff_t>(settings.setup_count),
+                            [](const Command& command) { return command.kind != 'k'; })) {
+      error = "dynamic setup accepts only k commands";
+      return false;
+    }
+    layout.setup_count = settings.setup_count;
+    layout.measured_count = commands.size() - layout.setup_count;
     return true;
   }
 
@@ -240,15 +285,11 @@ std::uint64_t validate_queries(const Set& structure, const std::vector<Command>&
 }
 
 template <rq::structures::OrderStatisticSet Set>
-std::uint64_t validate_insertions(const Set& structure, const std::vector<Command>& commands) {
-  std::vector<int> values;
-  values.reserve(commands.size());
-  for (const Command& command : commands) values.push_back(command.first);
+void hash_structure_state(std::uint64_t& checksum, const Set& structure, std::vector<int> values) {
   std::ranges::sort(values);
   const auto unique_end = std::ranges::unique(values).begin();
   values.erase(unique_end, values.end());
 
-  std::uint64_t checksum = kFnvOffset;
   hash_record(checksum, 's', true, structure.size());
 
   std::vector<rq::structures::Count> indices{
@@ -274,13 +315,49 @@ std::uint64_t validate_insertions(const Set& structure, const std::vector<Comman
   for (const int probe : probes) {
     hash_record(checksum, 'n', true, structure.count_less(probe));
   }
+}
+
+template <rq::structures::OrderStatisticSet Set>
+std::uint64_t validate_insertions(const Set& structure, const std::vector<Command>& commands) {
+  std::vector<int> values;
+  values.reserve(commands.size());
+  for (const Command& command : commands) values.push_back(command.first);
+
+  std::uint64_t checksum = kFnvOffset;
+  hash_structure_state(checksum, structure, std::move(values));
+  return checksum;
+}
+
+template <rq::structures::OrderStatisticSet Set>
+std::uint64_t validate_dynamic(const std::vector<Command>& commands,
+                               const std::size_t setup_count) {
+  Set structure;
+  std::vector<int> values;
+  values.reserve(commands.size());
+  for (std::size_t index = 0; index < setup_count; ++index) {
+    structure.insert(commands[index].first);
+    values.push_back(commands[index].first);
+  }
+
+  std::uint64_t checksum = kFnvOffset;
+  for (std::size_t index = setup_count; index < commands.size(); ++index) {
+    const Command& command = commands[index];
+    if (command.kind == 'k') {
+      structure.insert(command.first);
+      values.push_back(command.first);
+    } else {
+      const auto [has_value, value] = query_result(structure, command);
+      hash_record(checksum, command.kind, has_value, value);
+    }
+  }
+  hash_structure_state(checksum, structure, std::move(values));
   return checksum;
 }
 
 template <rq::structures::OrderStatisticSet Set>
 Measurement run_benchmark(Set& structure, const std::vector<Command>& commands,
                           const BenchmarkMode mode, const WorkloadLayout layout) {
-  if (mode == BenchmarkMode::queries) {
+  if (mode == BenchmarkMode::queries || mode == BenchmarkMode::dynamic) {
     for (std::size_t index = 0; index < layout.setup_count; ++index) {
       structure.insert(commands[index].first);
     }
@@ -292,18 +369,25 @@ Measurement run_benchmark(Set& structure, const std::vector<Command>& commands,
     for (const Command& command : commands) structure.insert(command.first);
   } else {
     for (std::size_t index = layout.setup_count; index < commands.size(); ++index) {
-      const auto [has_value, value] = query_result(structure, commands[index]);
-      do_not_optimize(value ^ (has_value ? (1ULL << 63) : 0));
+      const Command& command = commands[index];
+      if (command.kind == 'k') {
+        structure.insert(command.first);
+      } else {
+        const auto [has_value, value] = query_result(structure, command);
+        do_not_optimize(value ^ (has_value ? (1ULL << 63) : 0));
+      }
     }
   }
   const auto wall_finished = std::chrono::steady_clock::now();
   const std::uint64_t cpu_finished = cpu_time_ns();
+  do_not_optimize(structure.size());
 
   const auto wall_elapsed =
       std::chrono::duration_cast<std::chrono::nanoseconds>(wall_finished - wall_started).count();
-  const std::uint64_t checksum = mode == BenchmarkMode::insert
-                                     ? validate_insertions(structure, commands)
-                                     : validate_queries(structure, commands, layout.setup_count);
+  const std::uint64_t checksum =
+      mode == BenchmarkMode::insert    ? validate_insertions(structure, commands)
+      : mode == BenchmarkMode::dynamic ? validate_dynamic<Set>(commands, layout.setup_count)
+                                       : validate_queries(structure, commands, layout.setup_count);
   return Measurement{
       .wall_elapsed_ns = static_cast<std::uint64_t>(wall_elapsed),
       .cpu_elapsed_ns = cpu_finished - cpu_started,
@@ -345,7 +429,7 @@ int main(const int argc, char* argv[]) {
     return 2;
   }
   WorkloadLayout layout;
-  if (!validate_layout(commands, settings.mode, layout, error)) {
+  if (!validate_layout(commands, settings, layout, error)) {
     std::cerr << error << '\n';
     return 2;
   }
