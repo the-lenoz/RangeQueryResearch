@@ -7,9 +7,9 @@ export module rangequery.structures.avl;
 
 export import rangequery.structures.contracts;
 
-export namespace rq::structures {
+namespace rq::structures {
 
-class AvlTree final {
+export class AvlTree final {
  public:
   AvlTree();
   ~AvlTree();

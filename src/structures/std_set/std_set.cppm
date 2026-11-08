@@ -7,9 +7,9 @@ export module rangequery.structures.std_set;
 
 export import rangequery.structures.contracts;
 
-export namespace rq::structures {
+namespace rq::structures {
 
-class StdSet final {
+export class StdSet final {
  public:
   StdSet();
   ~StdSet();

@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +28,16 @@ from generate_payload import (  # noqa: E402
     state_validation_checksum,
 )
 
+
+RUNNER_METADATA = {
+    "benchmark_engine": "google_benchmark",
+    "benchmark_version": "1.9.4",
+    "benchmark_iterations": 1,
+    "wall_clock": "google_benchmark",
+    "compiler": "/test/c++",
+    "compiler_version": "test compiler 1.0",
+    "build_config": "Release",
+}
 
 QUERY_PAYLOAD = """\
 k -2147483648
@@ -108,7 +120,10 @@ class BenchmarkChecks(unittest.TestCase):
         self.assertEqual(result["validation_checksum"], checksum)
         self.assertGreaterEqual(result["wall_elapsed_ns"], 0)
         self.assertGreaterEqual(result["cpu_elapsed_ns"], 0)
-        self.assertIn(result["cpu_clock"], ("process", "std_clock"))
+        self.assertEqual(result["cpu_clock"], "process")
+        self.assertEqual(result["benchmark_engine"], "google_benchmark")
+        self.assertEqual(result["benchmark_iterations"], 1)
+        self.assertEqual(result["benchmark_version"], "1.9.4")
 
     def test_query_runner_for_every_structure(self) -> None:
         for structure in benchmark.STRUCTURES:
@@ -136,6 +151,25 @@ class BenchmarkChecks(unittest.TestCase):
                 self.assert_success(
                     structure, "dynamic", DYNAMIC_PAYLOAD, 8, expected, setup_count=3
                 )
+
+    def test_benchmark_environment_cannot_change_workload_passes_or_protocol(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            unexpected_output = Path(directory) / "unexpected.json"
+            overrides = {
+                "BENCHMARK_MIN_WARMUP_TIME": "60",
+                "BENCHMARK_REPETITIONS": "3",
+                "BENCHMARK_FILTER": "nothing_matches",
+                "BENCHMARK_LIST_TESTS": "true",
+                "BENCHMARK_OUT": str(unexpected_output),
+                "V": "3",
+            }
+            with mock.patch.dict(os.environ, overrides):
+                for structure in benchmark.STRUCTURES:
+                    with self.subTest(structure=structure):
+                        self.assert_success(
+                            structure, "insert", INSERT_PAYLOAD, 6, INSERT_CHECKSUM
+                        )
+            self.assertFalse(unexpected_output.exists())
 
     def test_workload_generator_expected_answers(self) -> None:
         for query_kind in ("rank", "select", "range", "mixed"):
@@ -234,6 +268,7 @@ class BenchmarkChecks(unittest.TestCase):
 
     def test_runner_json_parser_rejects_missing_and_negative_fields(self) -> None:
         valid = {
+            **RUNNER_METADATA,
             "wall_elapsed_ns": 1,
             "cpu_elapsed_ns": 1,
             "measured_operation_count": 1,
@@ -245,6 +280,13 @@ class BenchmarkChecks(unittest.TestCase):
             {**valid, "cpu_elapsed_ns": -1},
             {**valid, "measured_operation_count": 0},
             {**valid, "validation_checksum": "invalid"},
+            {**valid, "benchmark_iterations": 2},
+            {**valid, "benchmark_iterations": True},
+            {**valid, "benchmark_iterations": 1.0},
+            {**valid, "benchmark_engine": "unknown"},
+            {**valid, "wall_clock": "steady_clock"},
+            {**valid, "benchmark_version": ""},
+            {**valid, "compiler_version": None},
         ):
             with self.subTest(mutation=mutation):
                 with self.assertRaises(RuntimeError):
@@ -253,6 +295,7 @@ class BenchmarkChecks(unittest.TestCase):
     def test_checksum_mismatch_aborts_before_producing_a_row(self) -> None:
         case = benchmark.query_case("vector", "test", "rank", 5, 3, 1, "uniform", "dense")
         runner_result = {
+            **RUNNER_METADATA,
             "wall_elapsed_ns": 10,
             "cpu_elapsed_ns": 9,
             "measured_operation_count": case.measured_operation_count,
@@ -266,12 +309,13 @@ class BenchmarkChecks(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "checksum"):
                 benchmark.execute_case(Path("runner"), case, 0, 1, {})
 
-    def test_dynamic_cases_share_payload_and_emit_schema_three_metadata(self) -> None:
+    def test_dynamic_cases_share_payload_and_emit_schema_four_metadata(self) -> None:
         cases = benchmark.dynamic_cases(100, 1_000, 10, 44)
         self.assertEqual({case.payload for case in cases}, {cases[0].payload})
         self.assertEqual({case.expected_checksum for case in cases}, {cases[0].expected_checksum})
         case = cases[0]
         runner_result = {
+            **RUNNER_METADATA,
             "wall_elapsed_ns": 1_000,
             "cpu_elapsed_ns": 900,
             "measured_operation_count": case.measured_operation_count,
@@ -282,9 +326,17 @@ class BenchmarkChecks(unittest.TestCase):
             returncode=0, stdout=json.dumps(runner_result), stderr=""
         )
         with mock.patch.object(benchmark.subprocess, "run", return_value=completed) as run:
-            row = benchmark.execute_case(Path("runner"), case, 2, 3, {"build_config": "Release"})
+            row = benchmark.execute_case(
+                Path("runner"), case, 2, 3, {"build_config": "wrong", "compiler": "wrong"}
+            )
 
-        self.assertEqual(row["benchmark_schema_version"], 3)
+        self.assertEqual(row["benchmark_schema_version"], 4)
+        self.assertEqual(row["benchmark_engine"], "google_benchmark")
+        self.assertEqual(row["benchmark_version"], "1.9.4")
+        self.assertEqual(row["benchmark_iterations"], 1)
+        self.assertEqual(row["compiler"], RUNNER_METADATA["compiler"])
+        self.assertEqual(row["build_config"], RUNNER_METADATA["build_config"])
+        self.assertEqual(row["wall_clock"], "google_benchmark")
         self.assertEqual(row["seed"], 44)
         self.assertEqual(row["workload_seed"], 44)
         self.assertEqual(row["execution_order"], 3)

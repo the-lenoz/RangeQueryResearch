@@ -3,6 +3,7 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 add_executable(rangequery_tests
   config_test.cpp
+  factory_test.cpp
   structure_contract_test.cpp
 )
 target_link_libraries(rangequery_tests PRIVATE rangequery_modules GTest::gtest_main)

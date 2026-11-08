@@ -2,6 +2,7 @@ module;
 
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -19,7 +20,7 @@ OrderedVector::OrderedVector(const OrderedVector& other) {
   if (other.impl_) impl_ = std::make_unique<Impl>(*other.impl_);
 }
 OrderedVector& OrderedVector::operator=(const OrderedVector& other) {
-  if (this == &other) return *this;
+  if (this == &other) return *this;  // Avoid copying the entire vector on self-assignment.
   std::unique_ptr<Impl> replacement;
   if (other.impl_) replacement = std::make_unique<Impl>(*other.impl_);
   impl_ = std::move(replacement);
@@ -27,6 +28,7 @@ OrderedVector& OrderedVector::operator=(const OrderedVector& other) {
 }
 OrderedVector::OrderedVector(OrderedVector&& other) noexcept = default;
 OrderedVector& OrderedVector::operator=(OrderedVector&& other) noexcept {
+  // Preserve the source on self-move; otherwise release the destination first.
   if (this != &other) impl_ = std::move(other.impl_);
   return *this;
 }
@@ -52,8 +54,10 @@ Count OrderedVector::count_in_open_closed_range(const int left, const int right)
 }
 
 Selection OrderedVector::select(const Count one_based_index) const {
-  if (!impl_ || one_based_index == 0 || one_based_index > impl_->values.size()) return {};
-  return Selection{true, impl_->values[static_cast<std::size_t>(one_based_index - 1)]};
+  if (!impl_ || one_based_index == 0 || one_based_index > impl_->values.size()) {
+    return std::nullopt;
+  }
+  return impl_->values[static_cast<std::size_t>(one_based_index - 1)];
 }
 
 Count OrderedVector::size() const {

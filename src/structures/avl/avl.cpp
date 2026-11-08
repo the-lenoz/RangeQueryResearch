@@ -1,7 +1,9 @@
 module;
 
 #include <algorithm>
+#include <cassert>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -15,8 +17,19 @@ struct AvlTree::Impl {
     int key;
     unsigned height{1};
     Count subtree_size{1};
+
     std::unique_ptr<Node> left;
     std::unique_ptr<Node> right;
+
+    void update() {
+      height = 1 + std::max(left ? left->height : 0, right ? right->height : 0);
+      subtree_size = 1 + (left ? left->subtree_size : 0) + (right ? right->subtree_size : 0);
+    }
+
+    [[nodiscard]] int balance_factor() const {
+      return static_cast<int>(left ? left->height : 0) -
+             static_cast<int>(right ? right->height : 0);
+    }
   };
 
   std::unique_ptr<Node> root;
@@ -73,50 +86,38 @@ struct AvlTree::Impl {
     return copy;
   }
 
-  static unsigned height(const std::unique_ptr<Node>& node) {
-    return node ? node->height : 0;
-  }
   static Count size(const std::unique_ptr<Node>& node) {
     return node ? node->subtree_size : 0;
   }
 
-  static void update(Node& node) {
-    node.height = 1 + std::max(height(node.left), height(node.right));
-    node.subtree_size = 1 + size(node.left) + size(node.right);
-  }
-
-  static int balance_factor(const Node& node) {
-    return static_cast<int>(height(node.left)) - static_cast<int>(height(node.right));
-  }
-
   static void rotate_left(std::unique_ptr<Node>& node) {
+    assert(node && node->right);
     auto pivot = std::move(node->right);
     node->right = std::move(pivot->left);
-    update(*node);
+    node->update();
     pivot->left = std::move(node);
-    update(*pivot->left);
-    update(*pivot);
+    pivot->update();
     node = std::move(pivot);
   }
 
   static void rotate_right(std::unique_ptr<Node>& node) {
+    assert(node && node->left);
     auto pivot = std::move(node->left);
     node->left = std::move(pivot->right);
-    update(*node);
+    node->update();
     pivot->right = std::move(node);
-    update(*pivot->right);
-    update(*pivot);
+    pivot->update();
     node = std::move(pivot);
   }
 
   static void rebalance(std::unique_ptr<Node>& node) {
-    update(*node);
-    const int factor = balance_factor(*node);
+    node->update();
+    const int factor = node->balance_factor();
     if (factor > 1) {
-      if (balance_factor(*node->left) < 0) rotate_left(node->left);
+      if (node->left->balance_factor() < 0) rotate_left(node->left);
       rotate_right(node);
     } else if (factor < -1) {
-      if (balance_factor(*node->right) > 0) rotate_right(node->right);
+      if (node->right->balance_factor() > 0) rotate_right(node->right);
       rotate_left(node);
     }
   }
@@ -168,12 +169,12 @@ struct AvlTree::Impl {
   }
 
   static Selection select(const std::unique_ptr<Node>& node, const Count index) {
-    if (!node || index == 0 || index > size(node)) return {};
+    if (!node || index == 0 || index > size(node)) return std::nullopt;
     Count remaining = index;
     const Node* current = node.get();
     while (current) {
       const Count left_size = size(current->left);
-      if (remaining == left_size + 1) return Selection{true, current->key};
+      if (remaining == left_size + 1) return current->key;
       if (remaining <= left_size) {
         current = current->left.get();
       } else {
@@ -181,7 +182,7 @@ struct AvlTree::Impl {
         current = current->right.get();
       }
     }
-    return {};
+    return std::nullopt;
   }
 };
 
@@ -216,7 +217,7 @@ Count AvlTree::count_in_open_closed_range(const int left, const int right) const
          Impl::count_less_or_equal(impl_->root, left);
 }
 Selection AvlTree::select(const Count one_based_index) const {
-  return impl_ ? Impl::select(impl_->root, one_based_index) : Selection{};
+  return impl_ ? Impl::select(impl_->root, one_based_index) : std::nullopt;
 }
 Count AvlTree::size() const {
   return impl_ ? Impl::size(impl_->root) : 0;

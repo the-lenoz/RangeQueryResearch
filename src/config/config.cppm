@@ -1,17 +1,20 @@
+module;
+
+#include <expected>
+#include <string_view>
+
 export module rangequery.config;
 
-export namespace rq {
+export import rangequery.structures.kind;
 
-enum class StructureKind { ordered_vector, std_set, avl, treap };
+namespace rq {
 
-struct Settings {
+export struct Settings {
   StructureKind structure{StructureKind::ordered_vector};
   bool show_help{false};
-  bool valid{true};
-  const char* error_message{nullptr};
 };
 
-[[nodiscard]] Settings read_command_line(int argc, char* argv[]);
-[[nodiscard]] const char* to_string(StructureKind kind);
+export [[nodiscard]] std::expected<Settings, std::string_view> read_command_line(int argc,
+                                                                                 char* argv[]);
 
 }  // namespace rq

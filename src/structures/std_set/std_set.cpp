@@ -2,6 +2,7 @@ module;
 
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <set>
 #include <utility>
 
@@ -48,10 +49,12 @@ Count StdSet::count_in_open_closed_range(const int left, const int right) const 
 }
 
 Selection StdSet::select(const Count one_based_index) const {
-  if (!impl_ || one_based_index == 0 || one_based_index > impl_->values.size()) return {};
+  if (!impl_ || one_based_index == 0 || one_based_index > impl_->values.size()) {
+    return std::nullopt;
+  }
   auto position = impl_->values.begin();
   std::advance(position, static_cast<std::ptrdiff_t>(one_based_index - 1));
-  return Selection{true, *position};
+  return *position;
 }
 
 Count StdSet::size() const {

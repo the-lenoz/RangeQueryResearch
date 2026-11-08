@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Проверяет CLI для каждой реализации и каждого вида команды."""
+"""Exercise each CLI structure and command type."""
 
 from __future__ import annotations
 

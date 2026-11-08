@@ -7,9 +7,9 @@ export module rangequery.structures.treap;
 
 export import rangequery.structures.contracts;
 
-export namespace rq::structures {
+namespace rq::structures {
 
-class Treap final {
+export class Treap final {
  public:
   Treap();
   ~Treap();

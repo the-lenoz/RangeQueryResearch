@@ -1,0 +1,4 @@
+CompileFlags:
+  # GCC Modules TS metadata cannot be interpreted by clangd. Use the separate
+  # Clang build tree, which provides CMake-generated PCM module mappings.
+  CompilationDatabase: build-clangd

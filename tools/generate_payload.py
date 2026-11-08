@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Генерирует детерминированные потоки команд для CLI rangequery."""
+"""Generate deterministic command streams for the rangequery CLI."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class QueryWorkload:
-    """Поток с точным размером множества и заданным числом запросов."""
+    """Workload with an exact set size and query count."""
 
     payload: str
     data_size: int
@@ -25,7 +25,7 @@ class QueryWorkload:
 
 @dataclass(frozen=True)
 class InsertWorkload:
-    """Поток вставок с точным конечным размером множества."""
+    """Insertion workload with an exact final set size."""
 
     payload: str
     data_size: int
@@ -35,7 +35,7 @@ class InsertWorkload:
 
 @dataclass(frozen=True)
 class DynamicWorkload:
-    """Поток с начальной загрузкой и перемешанными измеряемыми операциями."""
+    """Workload with setup insertions and mixed measured operations."""
 
     payload: str
     initial_data_size: int
@@ -56,7 +56,7 @@ UINT64_MASK = (1 << 64) - 1
 
 
 def checksum_record(checksum: int, code: str, has_value: bool, value: int) -> int:
-    """Добавляет один типизированный результат в стабильный FNV-1a checksum."""
+    """Add a typed result to the stable FNV-1a checksum."""
     encoded = bytes((ord(code), int(has_value))) + (value & UINT64_MASK).to_bytes(8, "little")
     for byte in encoded:
         checksum ^= byte
@@ -69,7 +69,7 @@ def checksum_text(checksum: int) -> str:
 
 
 def state_validation_checksum(checksum: int, values: list[int]) -> int:
-    """Добавляет к checksum размер и дешёвые пробы состояния множества."""
+    """Add the set size and inexpensive state probes to the checksum."""
     sorted_values = sorted(set(values))
     checksum = checksum_record(checksum, "s", True, len(sorted_values))
     indices = sorted(
@@ -97,7 +97,7 @@ def state_validation_checksum(checksum: int, values: list[int]) -> int:
 
 
 def insert_validation_checksum(values: list[int]) -> str:
-    """Вычисляет ожидаемый набор дешёвых проб итогового множества."""
+    """Compute the expected probes of the final set."""
     return checksum_text(state_validation_checksum(FNV_OFFSET, values))
 
 
@@ -108,11 +108,11 @@ def _make_values(rng: random.Random, data_size: int, density: str) -> list[int]:
         return values
     if density == "sparse":
         return rng.sample(range(-1_000_000_000, 1_000_000_001), data_size)
-    raise ValueError("density должен быть dense или sparse")
+    raise ValueError("density must be dense or sparse")
 
 
 def _hot_index(rng: random.Random, data_size: int) -> int:
-    """Выбирает один из 5 % ключей вокруг центра множества."""
+    """Choose a key among the central 5% of the set."""
     radius = max(1, data_size // 40)
     center = data_size // 2
     return min(data_size - 1, max(0, center + rng.randint(-radius, radius)))
@@ -126,13 +126,13 @@ def build_query_workload(
     query_kind: str = "mixed",
     density: str = "sparse",
 ) -> QueryWorkload:
-    """Создаёт множество точного размера, затем выполняет только запросы к нему.
+    """Build a set of exact size, then issue queries only.
 
-    ``uniform`` выбирает обращения по всему множеству. ``hotspot`` концентрирует
-    обращения вокруг центральных 5 % ключей, что моделирует локальность доступа.
+    ``uniform`` accesses the full set. ``hotspot`` concentrates accesses
+    around the central 5% of keys to model locality.
     """
     if data_size < 1 or query_count < 1:
-        raise ValueError("data_size и query_count должны быть положительными")
+        raise ValueError("data_size and query_count must be positive")
 
     rng = random.Random(seed)
     values = _make_values(rng, data_size, density)
@@ -178,9 +178,9 @@ def build_insert_workload(
     density: str = "sparse",
     insertion_order: str = "random",
 ) -> InsertWorkload:
-    """Создаёт уникальные вставки со случайным, прямым или обратным порядком."""
+    """Generate unique insertions in random, ascending, or descending order."""
     if data_size < 1:
-        raise ValueError("data_size должен быть положительным")
+        raise ValueError("data_size must be positive")
 
     values = _make_values(random.Random(seed), data_size, density)
     if insertion_order == "ascending":
@@ -188,7 +188,7 @@ def build_insert_workload(
     elif insertion_order == "descending":
         values.sort(reverse=True)
     elif insertion_order != "random":
-        raise ValueError("insertion_order должен быть random, ascending или descending")
+        raise ValueError("insertion_order must be random, ascending, or descending")
 
     return InsertWorkload(
         "\n".join(f"k {value}" for value in values) + "\n",
@@ -204,13 +204,13 @@ def build_dynamic_workload(
     insert_percentage: int,
     seed: int,
 ) -> DynamicWorkload:
-    """Создаёт рост множества с точной долей успешных вставок и равной смесью запросов."""
+    """Grow a set with an exact successful insertion fraction and balanced query types."""
     if initial_data_size < 1 or measured_operation_count < 1:
-        raise ValueError("Размер множества и число измеряемых операций должны быть положительными")
+        raise ValueError("Set size and measured operation count must be positive")
     if insert_percentage <= 0 or insert_percentage >= 100:
-        raise ValueError("Доля вставок должна быть целым числом от 1 до 99")
+        raise ValueError("Insertion percentage must be an integer from 1 to 99")
     if measured_operation_count * insert_percentage % 100 != 0:
-        raise ValueError("Число операций не позволяет получить точную заданную долю вставок")
+        raise ValueError("Operation count cannot represent the requested insertion percentage exactly")
 
     insert_count = measured_operation_count * insert_percentage // 100
     query_count = measured_operation_count - insert_count

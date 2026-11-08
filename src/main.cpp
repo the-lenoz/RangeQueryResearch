@@ -1,96 +1,102 @@
+#include <cstdio>
+#include <exception>
 #include <iostream>
+#include <print>
 #include <variant>
 
 import rangequery.config;
-import rangequery.structures.avl;
-import rangequery.structures.ordered_vector;
-import rangequery.structures.std_set;
-import rangequery.structures.treap;
+import rangequery.structures.factory;
 
 namespace {
+
+constexpr int kInvalidInputExitCode = 2;
+constexpr int kOkExitCode = 0;
 
 template <rq::structures::OrderStatisticSet Set>
 int run_commands(Set& structure) {
   char command{};
   while (std::cin >> command) {
-    if (command == 'k') {
-      int value{};
-      if (!(std::cin >> value)) {
-        std::cerr << "invalid k command: expected an integer\n";
-        return 2;
+    switch (command) {
+      case 'k': {
+        int value{};
+        if (!(std::cin >> value)) {
+          std::println(stderr, "invalid k command: expected an integer");
+          return kInvalidInputExitCode;
+        }
+        structure.insert(value);
+        break;
       }
-      structure.insert(value);
-    } else if (command == 'q') {
-      int left{}, right{};
-      if (!(std::cin >> left >> right)) {
-        std::cerr << "invalid q command: expected two integers\n";
-        return 2;
+      case 'q': {
+        int left{}, right{};
+        if (!(std::cin >> left >> right)) {
+          std::println(stderr, "invalid q command: expected two integers");
+          return kInvalidInputExitCode;
+        }
+        std::println("{}", structure.count_in_open_closed_range(left, right));
+        break;
       }
-      std::cout << structure.count_in_open_closed_range(left, right) << '\n';
-    } else if (command == 'm') {
-      long long index{};
-      if (!(std::cin >> index) || index <= 0) {
-        std::cerr << "invalid m command: expected a positive index\n";
-        return 2;
+      case 'm': {
+        long long index{};
+        if (!(std::cin >> index) || index <= 0) {
+          std::println(stderr, "invalid m command: expected a positive index");
+          return kInvalidInputExitCode;
+        }
+        const auto result = structure.select(static_cast<rq::structures::Count>(index));
+        if (!result.has_value()) {
+          std::println(stderr, "m index is outside the set");
+          return kInvalidInputExitCode;
+        }
+        std::println("{}", *result);
+        break;
       }
-      const auto result = structure.select(static_cast<rq::structures::Count>(index));
-      if (!result.has_value) {
-        std::cerr << "m index is outside the set\n";
-        return 2;
+      case 'n': {
+        int value{};
+        if (!(std::cin >> value)) {
+          std::println(stderr, "invalid n command: expected an integer");
+          return kInvalidInputExitCode;
+        }
+        std::println("{}", structure.count_less(value));
+        break;
       }
-      std::cout << result.value << '\n';
-    } else if (command == 'n') {
-      int value{};
-      if (!(std::cin >> value)) {
-        std::cerr << "invalid n command: expected an integer\n";
-        return 2;
-      }
-      std::cout << structure.count_less(value) << '\n';
-    } else {
-      std::cerr << "unknown command: " << command << '\n';
-      return 2;
+      default:
+        std::println(stderr, "unknown command: {}", command);
+        return kInvalidInputExitCode;
     }
   }
 
   if (!std::cin.eof()) {
-    std::cerr << "malformed input\n";
-    return 2;
+    std::println(stderr, "malformed input");
+    return kInvalidInputExitCode;
   }
-  return 0;
+  return kOkExitCode;
 }
-
-using SelectedStructure = std::variant<rq::structures::OrderedVector, rq::structures::StdSet,
-                                       rq::structures::AvlTree, rq::structures::Treap>;
 
 }  // namespace
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[]) try {
   const auto settings = rq::read_command_line(argc, argv);
 
-  if (settings.show_help) {
-    std::cout << "Usage: rangequery --structure <vector|set|avl|treap>\n";
-    return 0;
+  if (!settings) {
+    std::println(stderr, "{}", settings.error());
+    return kInvalidInputExitCode;
   }
 
-  if (!settings.valid) {
-    std::cerr << settings.error_message << '\n';
-    return 2;
+  if (settings->show_help) {
+    std::println("Usage: rangequery --structure <vector|set|avl|treap>");
+    return kOkExitCode;
   }
 
-  SelectedStructure structure{std::in_place_type<rq::structures::OrderedVector>};
-  switch (settings.structure) {
-    case rq::StructureKind::ordered_vector:
-      break;
-    case rq::StructureKind::std_set:
-      structure.emplace<rq::structures::StdSet>();
-      break;
-    case rq::StructureKind::avl:
-      structure.emplace<rq::structures::AvlTree>();
-      break;
-    case rq::StructureKind::treap:
-      structure.emplace<rq::structures::Treap>();
-      break;
+  auto structure = rq::structures::make_structure(settings->structure);
+  if (!structure) {
+    std::println(stderr, "{}", structure.error());
+    return kInvalidInputExitCode;
   }
 
-  return std::visit([](auto& selected) { return run_commands(selected); }, structure);
+  return std::visit([](auto& selected) { return run_commands(selected); }, *structure);
+} catch (const std::exception& error) {
+  std::println(stderr, "rangequery: {}", error.what());
+  return kInvalidInputExitCode;
+} catch (...) {
+  std::println(stderr, "rangequery: unknown exception");
+  return kInvalidInputExitCode;
 }

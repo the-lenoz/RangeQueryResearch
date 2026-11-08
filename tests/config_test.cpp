@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <array>
+#include <expected>
 #include <string_view>
 #include <vector>
 
@@ -7,7 +8,8 @@ import rangequery.config;
 
 namespace {
 
-rq::Settings read_arguments(std::initializer_list<const char*> arguments) {
+std::expected<rq::Settings, std::string_view> read_arguments(
+    std::initializer_list<const char*> arguments) {
   std::vector<char*> argv;
   argv.reserve(arguments.size() + 1);
   argv.push_back(const_cast<char*>("rangequery"));
@@ -20,10 +22,9 @@ rq::Settings read_arguments(std::initializer_list<const char*> arguments) {
 TEST(CommandLineConfiguration, DefaultsToOrderedVector) {
   const auto settings = read_arguments({});
 
-  EXPECT_TRUE(settings.valid);
-  EXPECT_FALSE(settings.show_help);
-  EXPECT_EQ(settings.structure, rq::StructureKind::ordered_vector);
-  EXPECT_EQ(settings.error_message, nullptr);
+  ASSERT_TRUE(settings.has_value());
+  EXPECT_FALSE(settings->show_help);
+  EXPECT_EQ(settings->structure, rq::StructureKind::ordered_vector);
 }
 
 TEST(CommandLineConfiguration, ParsesEverySupportedStructure) {
@@ -34,13 +35,12 @@ TEST(CommandLineConfiguration, ParsesEverySupportedStructure) {
       std::pair{"treap", rq::StructureKind::treap},
   };
 
-  for (const auto [name, expected] : cases) {
+  for (const auto& [name, expected] : cases) {
     SCOPED_TRACE(name);
     const auto settings = read_arguments({"--structure", name});
-    EXPECT_TRUE(settings.valid);
-    EXPECT_FALSE(settings.show_help);
-    EXPECT_EQ(settings.structure, expected);
-    EXPECT_EQ(settings.error_message, nullptr);
+    ASSERT_TRUE(settings.has_value());
+    EXPECT_FALSE(settings->show_help);
+    EXPECT_EQ(settings->structure, expected);
   }
 }
 
@@ -48,49 +48,60 @@ TEST(CommandLineConfiguration, RecognizesBothHelpOptions) {
   for (const char* option : {"-h", "--help"}) {
     SCOPED_TRACE(option);
     const auto settings = read_arguments({option});
-    EXPECT_TRUE(settings.valid);
-    EXPECT_TRUE(settings.show_help);
-    EXPECT_EQ(settings.error_message, nullptr);
+    ASSERT_TRUE(settings.has_value());
+    EXPECT_TRUE(settings->show_help);
+    EXPECT_EQ(settings->structure, rq::StructureKind::ordered_vector);
   }
 }
 
-TEST(CommandLineConfiguration, ParsesStructureAlongsideHelp) {
-  const auto settings = read_arguments({"--structure", "treap", "--help"});
+TEST(CommandLineConfiguration, HelpTakesPriorityInAnyPosition) {
+  const std::array cases{
+      std::initializer_list<const char*>{"--help", "--unknown"},
+      std::initializer_list<const char*>{"--unknown", "--help"},
+      std::initializer_list<const char*>{"--structure", "binary_tree", "--help"},
+      std::initializer_list<const char*>{"--structure", "treap", "-h"},
+  };
 
-  EXPECT_TRUE(settings.valid);
-  EXPECT_TRUE(settings.show_help);
-  EXPECT_EQ(settings.structure, rq::StructureKind::treap);
+  for (const auto arguments : cases) {
+    const auto settings = read_arguments(arguments);
+    ASSERT_TRUE(settings.has_value());
+    EXPECT_TRUE(settings->show_help);
+    EXPECT_EQ(settings->structure, rq::StructureKind::ordered_vector);
+  }
 }
 
 TEST(CommandLineConfiguration, RejectsUnknownStructure) {
   const auto settings = read_arguments({"--structure", "binary_tree"});
 
-  EXPECT_FALSE(settings.valid);
-  ASSERT_NE(settings.error_message, nullptr);
-  EXPECT_EQ(std::string_view{settings.error_message},
-            "unknown structure; expected vector, set, avl, or treap");
+  ASSERT_FALSE(settings.has_value());
+  EXPECT_EQ(settings.error(), "unknown structure; expected vector, set, avl, or treap");
 }
 
 TEST(CommandLineConfiguration, RejectsMissingStructureArgument) {
   const auto settings = read_arguments({"--structure"});
 
-  EXPECT_FALSE(settings.valid);
-  ASSERT_NE(settings.error_message, nullptr);
-  EXPECT_EQ(std::string_view{settings.error_message},
-            "--structure requires vector, set, avl, or treap");
+  ASSERT_FALSE(settings.has_value());
+  EXPECT_EQ(settings.error(), "--structure requires vector, set, avl, or treap");
 }
 
 TEST(CommandLineConfiguration, RejectsUnknownOption) {
   const auto settings = read_arguments({"--unknown"});
 
-  EXPECT_FALSE(settings.valid);
-  ASSERT_NE(settings.error_message, nullptr);
-  EXPECT_EQ(std::string_view{settings.error_message}, "unknown command-line argument");
+  ASSERT_FALSE(settings.has_value());
+  EXPECT_EQ(settings.error(), "unknown command-line argument");
+}
+
+TEST(CommandLineConfiguration, StopsAtFirstError) {
+  const auto settings = read_arguments({"--unknown", "--structure"});
+
+  ASSERT_FALSE(settings.has_value());
+  EXPECT_EQ(settings.error(), "unknown command-line argument");
 }
 
 TEST(CommandLineConfiguration, ConvertsEveryStructureKindToText) {
-  EXPECT_EQ(rq::to_string(rq::StructureKind::ordered_vector), std::string_view{"ordered_vector"});
-  EXPECT_EQ(rq::to_string(rq::StructureKind::std_set), std::string_view{"std_set"});
+  EXPECT_EQ(rq::to_string(rq::StructureKind::ordered_vector), std::string_view{"vector"});
+  EXPECT_EQ(rq::to_string(rq::StructureKind::std_set), std::string_view{"set"});
   EXPECT_EQ(rq::to_string(rq::StructureKind::avl), std::string_view{"avl"});
   EXPECT_EQ(rq::to_string(rq::StructureKind::treap), std::string_view{"treap"});
+  EXPECT_EQ(rq::to_string(static_cast<rq::StructureKind>(-1)), std::string_view{"unknown"});
 }

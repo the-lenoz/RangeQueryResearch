@@ -35,8 +35,8 @@ template <rq::structures::OrderStatisticSet Set>
 void check_order_statistics(Set& structure) {
   EXPECT_EQ(structure.size(), 0ULL);
   EXPECT_EQ(structure.count_less(0), 0ULL);
-  EXPECT_FALSE(structure.select(0).has_value);
-  EXPECT_FALSE(structure.select(1).has_value);
+  EXPECT_FALSE(structure.select(0).has_value());
+  EXPECT_FALSE(structure.select(1).has_value());
 
   structure.insert(8);
   structure.insert(2);
@@ -52,13 +52,13 @@ void check_order_statistics(Set& structure) {
   const auto first = structure.select(1);
   const auto second = structure.select(2);
   const auto third = structure.select(3);
-  EXPECT_TRUE(first.has_value);
-  EXPECT_TRUE(second.has_value);
-  EXPECT_TRUE(third.has_value);
-  EXPECT_EQ(first.value, -1);
-  EXPECT_EQ(second.value, 2);
-  EXPECT_EQ(third.value, 8);
-  EXPECT_FALSE(structure.select(4).has_value);
+  EXPECT_TRUE(first.has_value());
+  EXPECT_TRUE(second.has_value());
+  EXPECT_TRUE(third.has_value());
+  EXPECT_EQ(*first, -1);
+  EXPECT_EQ(*second, 2);
+  EXPECT_EQ(*third, 8);
+  EXPECT_FALSE(structure.select(4).has_value());
 }
 
 template <rq::structures::OrderStatisticSet Set>
@@ -70,10 +70,10 @@ void check_integer_extremes(Set& structure) {
             1ULL);
   const auto first = structure.select(1);
   const auto second = structure.select(2);
-  EXPECT_TRUE(first.has_value);
-  EXPECT_TRUE(second.has_value);
-  EXPECT_EQ(first.value, std::numeric_limits<int>::min());
-  EXPECT_EQ(second.value, std::numeric_limits<int>::max());
+  EXPECT_TRUE(first.has_value());
+  EXPECT_TRUE(second.has_value());
+  EXPECT_EQ(*first, std::numeric_limits<int>::min());
+  EXPECT_EQ(*second, std::numeric_limits<int>::max());
 }
 
 template <rq::structures::OrderStatisticSet Set>
@@ -103,12 +103,12 @@ void expect_matches_reference(const Set& structure, const std::set<int>& expecte
   for (rq::structures::Count index = 0; index <= expected.size() + 1; ++index) {
     const auto selection = structure.select(index);
     if (index == 0 || index > expected.size()) {
-      EXPECT_FALSE(selection.has_value) << "index=" << index;
+      EXPECT_FALSE(selection.has_value()) << "index=" << index;
       continue;
     }
-    EXPECT_TRUE(selection.has_value) << "index=" << index;
+    EXPECT_TRUE(selection.has_value()) << "index=" << index;
     const auto iterator = std::next(expected.begin(), static_cast<long long>(index - 1));
-    EXPECT_EQ(selection.value, *iterator) << "index=" << index;
+    EXPECT_EQ(*selection, *iterator) << "index=" << index;
   }
 }
 
@@ -188,9 +188,9 @@ TYPED_TEST(StructureBehaviorTest, EmptySetAnswersEveryQueryWithoutSpecialCases) 
         << "range=(" << left << ", " << right << ']';
   }
 
-  EXPECT_FALSE(structure.select(0).has_value);
-  EXPECT_FALSE(structure.select(1).has_value);
-  EXPECT_FALSE(structure.select(std::numeric_limits<rq::structures::Count>::max()).has_value);
+  EXPECT_FALSE(structure.select(0).has_value());
+  EXPECT_FALSE(structure.select(1).has_value());
+  EXPECT_FALSE(structure.select(std::numeric_limits<rq::structures::Count>::max()).has_value());
 }
 
 TYPED_TEST(StructureBehaviorTest, RepeatedInsertionsNeverChangeSetCardinality) {
@@ -247,15 +247,15 @@ TYPED_TEST(StructureBehaviorTest, SelectUsesOneBasedIndexAcrossTheWholeSet) {
     expected.insert(value);
   }
 
-  EXPECT_FALSE(structure.select(0).has_value);
+  EXPECT_FALSE(structure.select(0).has_value());
   rq::structures::Count index = 1;
   for (const int value : expected) {
     const auto selection = structure.select(index++);
-    ASSERT_TRUE(selection.has_value);
-    EXPECT_EQ(selection.value, value);
+    ASSERT_TRUE(selection.has_value());
+    EXPECT_EQ(*selection, value);
   }
-  EXPECT_FALSE(structure.select(index).has_value);
-  EXPECT_FALSE(structure.select(std::numeric_limits<rq::structures::Count>::max()).has_value);
+  EXPECT_FALSE(structure.select(index).has_value());
+  EXPECT_FALSE(structure.select(std::numeric_limits<rq::structures::Count>::max()).has_value());
 }
 
 TYPED_TEST(StructureBehaviorTest, HandlesAscendingAndDescendingInsertionOrders) {
@@ -274,9 +274,9 @@ TYPED_TEST(StructureBehaviorTest, HandlesAscendingAndDescendingInsertionOrders) 
   for (rq::structures::Count index = 1; index <= expected.size(); ++index) {
     const auto ascending_value = ascending.select(index);
     const auto descending_value = descending.select(index);
-    ASSERT_TRUE(ascending_value.has_value);
-    ASSERT_TRUE(descending_value.has_value);
-    EXPECT_EQ(ascending_value.value, descending_value.value) << "index=" << index;
+    ASSERT_TRUE(ascending_value.has_value());
+    ASSERT_TRUE(descending_value.has_value());
+    EXPECT_EQ(*ascending_value, *descending_value) << "index=" << index;
   }
 }
 
@@ -312,11 +312,10 @@ TYPED_TEST(StructureBehaviorTest, MatchesStdSetForDeterministicRandomWorkload) {
     const auto index = static_cast<rq::structures::Count>(random() % (expected.size() + 2));
     const auto selection = structure.select(index);
     if (index == 0 || index > expected.size()) {
-      EXPECT_FALSE(selection.has_value) << "index=" << index;
+      EXPECT_FALSE(selection.has_value()) << "index=" << index;
     } else {
-      ASSERT_TRUE(selection.has_value) << "index=" << index;
-      EXPECT_EQ(selection.value,
-                *std::next(expected.begin(), static_cast<std::ptrdiff_t>(index - 1)))
+      ASSERT_TRUE(selection.has_value()) << "index=" << index;
+      EXPECT_EQ(*selection, *std::next(expected.begin(), static_cast<std::ptrdiff_t>(index - 1)))
           << "index=" << index;
     }
   }

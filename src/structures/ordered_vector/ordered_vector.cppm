@@ -7,9 +7,9 @@ export module rangequery.structures.ordered_vector;
 
 export import rangequery.structures.contracts;
 
-export namespace rq::structures {
+namespace rq::structures {
 
-class OrderedVector final {
+export class OrderedVector final {
  public:
   OrderedVector();
   ~OrderedVector();

@@ -2,13 +2,38 @@ module;
 
 #include <cstdint>
 #include <memory>
-#include <random>
+#include <optional>
 #include <utility>
 #include <vector>
 
 module rangequery.structures.treap;
 
 namespace rq::structures {
+
+namespace {
+
+struct SplitMix64 {
+  std::uint64_t state;
+
+  constexpr std::uint64_t operator()() noexcept {
+    std::uint64_t value = (state += 0x9e37'79b9'7f4a'7c15ULL);
+    value = (value ^ (value >> 30)) * 0xbf58'476d'1ce4'e5b9ULL;
+    value = (value ^ (value >> 27)) * 0x94d0'49bb'1331'11ebULL;
+    return value ^ (value >> 31);
+  }
+};
+
+static_assert(sizeof(SplitMix64) == sizeof(std::uint64_t));
+
+constexpr bool has_expected_split_mix_sequence() {
+  SplitMix64 random{0x8e4d'3b29'1f76'a5c1ULL};
+  return random() == 0x3254'5d91'd39b'4e63ULL && random() == 0x86aa'ae25'8609'ca2bULL &&
+         random() == 0x3fc7'3a4a'c2c7'4222ULL && random() == 0x4641'9278'3227'2e53ULL;
+}
+
+static_assert(has_expected_split_mix_sequence());
+
+}  // namespace
 
 struct Treap::Impl {
   struct Node {
@@ -22,10 +47,8 @@ struct Treap::Impl {
     std::unique_ptr<Node> right;
   };
 
-  static constexpr std::uint64_t kSeed = 0x8e4d'3b29'1f76'a5c1ULL;
-
   std::unique_ptr<Node> root;
-  std::mt19937_64 random{kSeed};
+  SplitMix64 random{0x8e4d'3b29'1f76'a5c1ULL};
   std::vector<std::unique_ptr<Node>*> insertion_path;
 
   Impl() = default;
@@ -102,7 +125,7 @@ struct Treap::Impl {
     node = std::move(pivot);
   }
 
-  static bool insert(std::unique_ptr<Node>& node, const int value, std::mt19937_64& random,
+  static bool insert(std::unique_ptr<Node>& node, const int value, SplitMix64& random,
                      std::vector<std::unique_ptr<Node>*>& path) {
     path.clear();
     auto* link = &node;
@@ -157,12 +180,12 @@ struct Treap::Impl {
   }
 
   static Selection select(const std::unique_ptr<Node>& node, const Count index) {
-    if (!node || index == 0 || index > size(node)) return {};
+    if (!node || index == 0 || index > size(node)) return std::nullopt;
     Count remaining = index;
     const Node* current = node.get();
     while (current) {
       const Count left_size = size(current->left);
-      if (remaining == left_size + 1) return Selection{true, current->key};
+      if (remaining == left_size + 1) return current->key;
       if (remaining <= left_size) {
         current = current->left.get();
       } else {
@@ -170,7 +193,7 @@ struct Treap::Impl {
         current = current->right.get();
       }
     }
-    return {};
+    return std::nullopt;
   }
 };
 
@@ -205,7 +228,7 @@ Count Treap::count_in_open_closed_range(const int left, const int right) const {
          Impl::count_less_or_equal(impl_->root, left);
 }
 Selection Treap::select(const Count one_based_index) const {
-  return impl_ ? Impl::select(impl_->root, one_based_index) : Selection{};
+  return impl_ ? Impl::select(impl_->root, one_based_index) : std::nullopt;
 }
 Count Treap::size() const {
   return impl_ ? Impl::size(impl_->root) : 0;

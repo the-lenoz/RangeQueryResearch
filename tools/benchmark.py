@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Запускает воспроизводимые бенчмарки rangequery и записывает таблицу результатов."""
+"""Run reproducible rangequery benchmarks and write the results table."""
 
 from __future__ import annotations
 
 import argparse
 import csv
 import json
-import os
 import platform
 import random
 import re
@@ -28,7 +27,7 @@ STRUCTURES = ("vector", "set", "avl", "treap")
 
 @dataclass(frozen=True)
 class BenchmarkCase:
-    """Один измеряемый входной поток и его метаданные."""
+    """One measured workload and its metadata."""
 
     structure: str
     profile: str
@@ -56,7 +55,7 @@ class BenchmarkCase:
 
 @dataclass(frozen=True)
 class DataRegime:
-    """Диапазон размера и плотность данных для общего сравнения структур."""
+    """Size range and density for comparing structures."""
 
     name: str
     data_sizes: tuple[int, ...]
@@ -179,7 +178,7 @@ def dynamic_cases(
     insert_percentage: int,
     seed: int,
 ) -> list[BenchmarkCase]:
-    """Один динамический поток, разделяемый всеми структурами без регенерации."""
+    """One dynamic workload shared by all structures without regeneration."""
     workload: DynamicWorkload = build_dynamic_workload(
         initial_data_size=initial_data_size,
         measured_operation_count=measured_operation_count,
@@ -237,7 +236,7 @@ def comparison_cases(
 
 
 def regime_cases(regime: DataRegime, data_size: int, seed: int) -> list[BenchmarkCase]:
-    """Один и тот же входной поток для всех структур выбранного режима."""
+    """Use the same workload for every structure in the selected regime."""
     if regime.workload == "insert":
         return [
             insert_case(structure, regime.name, data_size, seed, regime.density, regime.insertion_order)
@@ -259,28 +258,37 @@ def regime_cases(regime: DataRegime, data_size: int, seed: int) -> list[Benchmar
 
 
 def parse_runner_output(output: str) -> dict[str, int | str]:
-    """Проверяет единственную JSON-запись, возвращённую C++ benchmark runner."""
+    """Validate the single JSON record returned by the C++ benchmark runner."""
     try:
         result = json.loads(output)
     except json.JSONDecodeError as error:
-        raise RuntimeError(f"benchmark runner вернул некорректный JSON: {error}") from error
+        raise RuntimeError(f"benchmark runner returned invalid JSON: {error}") from error
     if not isinstance(result, dict):
-        raise RuntimeError("benchmark runner должен вернуть JSON-объект")
+        raise RuntimeError("benchmark runner must return a JSON object")
 
     required_integers = ("wall_elapsed_ns", "cpu_elapsed_ns", "measured_operation_count")
     for field in required_integers:
         value = result.get(field)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            raise RuntimeError(f"benchmark runner вернул некорректное поле {field}")
+            raise RuntimeError(f"benchmark runner returned an invalid field {field}")
     if result["measured_operation_count"] == 0:
-        raise RuntimeError("benchmark runner не измерил ни одной операции")
+        raise RuntimeError("benchmark runner measured no operations")
 
     checksum = result.get("validation_checksum")
     if not isinstance(checksum, str) or re.fullmatch(r"[0-9a-f]{16}", checksum) is None:
-        raise RuntimeError("benchmark runner вернул некорректный validation_checksum")
+        raise RuntimeError("benchmark runner returned an invalid validation_checksum")
     cpu_clock = result.get("cpu_clock")
     if not isinstance(cpu_clock, str) or not cpu_clock:
-        raise RuntimeError("benchmark runner вернул некорректный cpu_clock")
+        raise RuntimeError("benchmark runner returned an invalid cpu_clock")
+    for field in ("benchmark_version", "compiler", "compiler_version", "build_config"):
+        if not isinstance(result.get(field), str) or not result[field]:
+            raise RuntimeError(f"benchmark runner returned an invalid field {field}")
+    for field in ("benchmark_engine", "wall_clock"):
+        if result.get(field) != "google_benchmark":
+            raise RuntimeError(f"benchmark runner returned an invalid field {field}")
+    iterations = result.get("benchmark_iterations")
+    if isinstance(iterations, bool) or not isinstance(iterations, int) or iterations != 1:
+        raise RuntimeError("benchmark runner must measure exactly one workload pass")
     return result
 
 
@@ -302,17 +310,17 @@ def execute_case(
         check=False,
     )
     if completed.returncode != 0:
-        raise RuntimeError(f"{case.structure} завершился с ошибкой: {completed.stderr.strip()}")
+        raise RuntimeError(f"{case.structure} failed: {completed.stderr.strip()}")
     result = parse_runner_output(completed.stdout)
     if result["measured_operation_count"] != case.measured_operation_count:
         raise RuntimeError(
-            f"{case.structure}: ожидалось {case.measured_operation_count} измеренных операций, "
-            f"runner сообщил {result['measured_operation_count']}"
+            f"{case.structure}: expected {case.measured_operation_count} measured operations, "
+            f"runner reported {result['measured_operation_count']}"
         )
     if result["validation_checksum"] != case.expected_checksum:
         raise RuntimeError(
-            f"{case.structure}: sanity checksum не совпал: ожидался {case.expected_checksum}, "
-            f"получен {result['validation_checksum']}"
+            f"{case.structure}: sanity checksum mismatch: expected {case.expected_checksum}, "
+            f"got {result['validation_checksum']}"
         )
 
     wall_elapsed_ns = int(result["wall_elapsed_ns"])
@@ -321,7 +329,13 @@ def execute_case(
     return {
         **metadata,
         "seed": case.workload_seed,
-        "benchmark_schema_version": 3,
+        "benchmark_schema_version": 4,
+        "benchmark_engine": result["benchmark_engine"],
+        "benchmark_version": result["benchmark_version"],
+        "benchmark_iterations": result["benchmark_iterations"],
+        "compiler": result["compiler"],
+        "compiler_version": result["compiler_version"],
+        "build_config": result["build_config"],
         "scenario": case.profile,
         "workload_mode": case.mode,
         "operation_kind": case.operation_kind,
@@ -351,7 +365,7 @@ def execute_case(
         "cpu_ns_per_operation": cpu_elapsed_ns / case.measured_operation_count,
         "validation_checksum": result["validation_checksum"],
         "measurement_scope": "structure_operations",
-        "wall_clock": "steady_clock",
+        "wall_clock": result["wall_clock"],
         "cpu_clock": result["cpu_clock"],
     }
 
@@ -362,7 +376,7 @@ def execute_repetition(
     repetition: int,
     metadata: dict[str, object],
 ) -> list[dict[str, object]]:
-    """Запускает одинаковые cases в воспроизводимо перемешанном порядке структур."""
+    """Run cases in a reproducibly shuffled structure order."""
     if not cases:
         return []
     ordered_cases = list(cases)
@@ -388,7 +402,7 @@ def main() -> None:
         dest="runner",
         type=Path,
         required=True,
-        help="Путь к rangequery_benchmark; --binary сохранён как совместимый псевдоним.",
+        help="Path to rangequery_benchmark; --binary is a compatibility alias.",
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
@@ -396,8 +410,8 @@ def main() -> None:
         choices=("comparison", "regimes", "dynamic"),
         default="comparison",
         help=(
-            "comparison запускает указанный общий поток; regimes — готовые режимы данных; "
-            "dynamic — матрицу чередующихся вставок и запросов."
+            "comparison runs the selected shared workload; regimes uses predefined data regimes; "
+            "dynamic runs a matrix of interleaved insertions and queries."
         ),
     )
     parser.add_argument(
@@ -407,7 +421,7 @@ def main() -> None:
         type=int,
         nargs="+",
         default=[1_000, 10_000, 100_000],
-        help="Размеры множеств; --sizes сохранён как псевдоним.",
+        help="Set sizes; --sizes is a compatibility alias.",
     )
     parser.add_argument("--query-count", type=int, default=10_000)
     parser.add_argument("--repetitions", type=int, default=3)
@@ -416,19 +430,19 @@ def main() -> None:
         "--seeds",
         type=int,
         nargs="+",
-        help="Независимые seed потоков; если не указаны, используется единственный --seed.",
+        help="Independent workload seeds; defaults to a single --seed.",
     )
     parser.add_argument(
         "--insert-percentages",
         type=int,
         nargs="+",
         default=list(DYNAMIC_INSERT_PERCENTAGES),
-        help="Точные проценты вставок для сценария dynamic.",
+        help="Exact insertion percentages for the dynamic scenario.",
     )
     parser.add_argument(
         "--build-config",
         default="unspecified",
-        help="Имя конфигурации сборки, записываемое в CSV.",
+        help="Optional build label; the runner reports the actual build_config.",
     )
     parser.add_argument("--localities", choices=("uniform", "hotspot"), nargs="+", default=["uniform"])
     parser.add_argument("--query-kind", choices=("mixed", "rank", "select", "range"), default="mixed")
@@ -436,22 +450,15 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.repetitions < 1 or args.query_count < 1 or any(size < 1 for size in args.data_sizes):
-        parser.error("Размеры множеств, число запросов и число повторов должны быть положительными")
+        parser.error("Set sizes, query count, and repetition count must be positive")
     if any(percentage <= 0 or percentage >= 100 for percentage in args.insert_percentages):
-        parser.error("Проценты вставок должны находиться в диапазоне от 1 до 99")
+        parser.error("Insertion percentages must be between 1 and 99")
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     metadata = {
         "platform": platform.platform(),
         "python": platform.python_version(),
-        "compiler": os.environ.get("CXX", "c++"),
-        "compiler_version": subprocess.run(
-            [os.environ.get("CXX", "c++"), "--version"],
-            text=True,
-            capture_output=True,
-            check=True,
-        ).stdout.splitlines()[0],
-        "build_config": args.build_config,
+        "build_label": args.build_config,
     }
     rows: list[dict[str, object]] = []
     workload_seeds = args.seeds if args.seeds is not None else [args.seed]
