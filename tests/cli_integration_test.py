@@ -94,34 +94,36 @@ def main() -> None:
                 message,
             )
 
-    help_result = subprocess.run(
-        [str(args.binary), "--help"], text=True, capture_output=True, check=False
-    )
-    expect_result(
-        "help", help_result, 0, "Usage: rangequery --structure <vector|set|avl|treap>\n", ""
-    )
+    for option in ("-h", "--help"):
+        result = subprocess.run(
+            [str(args.binary), option], input="invalid stdin", text=True,
+            capture_output=True, check=False, timeout=10,
+        )
+        if result.returncode != 0 or result.stderr:
+            raise AssertionError(f"help failed: {result!r}")
+        for fragment in ("[OPTIONS]", "--structure", "vector", "set", "avl", "treap"):
+            if fragment not in result.stdout:
+                raise AssertionError(f"help is missing {fragment!r}: {result.stdout!r}")
 
-    invalid_structure = subprocess.run(
-        [str(args.binary), "--structure", "unknown"], text=True, capture_output=True, check=False
-    )
-    expect_result(
-        "invalid structure",
-        invalid_structure,
-        2,
-        "",
-        "unknown structure; expected vector, set, avl, or treap\n",
-    )
+    for arguments, fragment in (
+        (["--structure", "unknown"], "--structure"),
+        (["--structure"], "--structure"),
+        (["--unknown"], "--unknown"),
+        (["--structure", "avl", "--structure", "treap"], "--structure"),
+    ):
+        result = subprocess.run(
+            [str(args.binary), *arguments], input="invalid stdin", text=True,
+            capture_output=True, check=False, timeout=10,
+        )
+        if result.returncode != 2 or result.stdout or fragment not in result.stderr:
+            raise AssertionError(f"invalid CLI {arguments!r}: {result!r}")
 
-    missing_structure = subprocess.run(
-        [str(args.binary), "--structure"], text=True, capture_output=True, check=False
-    )
-    expect_result(
-        "missing structure",
-        missing_structure,
-        2,
-        "",
-        "--structure requires vector, set, avl, or treap\n",
-    )
+    for arguments in ([], ["--structure=avl"]):
+        result = subprocess.run(
+            [str(args.binary), *arguments], input=SUCCESSFUL_COMMANDS, text=True,
+            capture_output=True, check=False, timeout=10,
+        )
+        expect_result(f"CLI {arguments!r}", result, 0, SUCCESSFUL_OUTPUT, "")
 
 
 if __name__ == "__main__":

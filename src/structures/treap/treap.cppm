@@ -1,7 +1,8 @@
 module;
 
-#include <experimental/propagate_const>
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 export module rangequery.structures.treap;
 
@@ -25,8 +26,17 @@ export class Treap final {
   [[nodiscard]] Count size() const;
 
  private:
-  struct Impl;
-  std::experimental::propagate_const<std::unique_ptr<Impl>> impl_;
+  struct Node;
+  struct SplitMix64 {
+    std::uint64_t state{0x8e4d'3b29'1f76'a5c1ULL};
+    constexpr std::uint64_t operator()() noexcept;
+  };
+  static_assert(sizeof(SplitMix64) == sizeof(std::uint64_t));
+  std::unique_ptr<Node> root_;
+  std::vector<std::unique_ptr<Node>*> insertion_path_;
+  SplitMix64 random_;
+
+  void swap(Treap& other) noexcept;
 };
 
 }  // namespace rq::structures

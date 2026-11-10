@@ -1,7 +1,6 @@
 module;
 
-#include <experimental/propagate_const>
-#include <memory>
+#include <vector>
 
 export module rangequery.structures.ordered_vector;
 
@@ -25,8 +24,7 @@ export class OrderedVector final {
   [[nodiscard]] Count size() const;
 
  private:
-  struct Impl;
-  std::experimental::propagate_const<std::unique_ptr<Impl>> impl_;
+  std::vector<int> values_;
 };
 
 }  // namespace rq::structures

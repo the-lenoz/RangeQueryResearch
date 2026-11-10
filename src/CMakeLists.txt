@@ -22,6 +22,23 @@ target_sources(rangequery_modules
 
 target_compile_features(rangequery_modules PUBLIC cxx_std_23)
 
+find_package(CLI11 2.7.2 EXACT CONFIG QUIET)
+if(NOT CLI11_FOUND)
+  include(FetchContent)
+  set(CLI11_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(CLI11_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(CLI11_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+  set(CLI11_PRECOMPILED OFF CACHE BOOL "" FORCE)
+  set(CLI11_MODULES OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(CLI11
+    URL https://codeload.github.com/CLIUtils/CLI11/tar.gz/refs/tags/v2.7.2
+    URL_HASH SHA256=46eef3101da70852ec7af026e09d485ccee81813331c8c6052d39344443b83da
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  )
+  FetchContent_MakeAvailable(CLI11)
+endif()
+target_link_libraries(rangequery_modules PRIVATE CLI11::CLI11)
+
 add_executable(rangequery main.cpp)
 target_link_libraries(rangequery PRIVATE rangequery_modules)
 

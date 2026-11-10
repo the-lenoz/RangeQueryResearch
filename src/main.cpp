@@ -1,4 +1,3 @@
-#include <cstdio>
 #include <exception>
 #include <iostream>
 #include <print>
@@ -8,7 +7,6 @@ import rangequery.config;
 import rangequery.structures.factory;
 
 namespace {
-
 constexpr int kInvalidInputExitCode = 2;
 constexpr int kOkExitCode = 0;
 
@@ -70,21 +68,12 @@ int run_commands(Set& structure) {
   }
   return kOkExitCode;
 }
-
 }  // namespace
 
 int main(int argc, char* argv[]) try {
   const auto settings = rq::read_command_line(argc, argv);
 
-  if (!settings) {
-    std::println(stderr, "{}", settings.error());
-    return kInvalidInputExitCode;
-  }
-
-  if (settings->show_help) {
-    std::println("Usage: rangequery --structure <vector|set|avl|treap>");
-    return kOkExitCode;
-  }
+  if (!settings) return settings.error();
 
   auto structure = rq::structures::make_structure(settings->structure);
   if (!structure) {

@@ -1,7 +1,6 @@
 module;
 
-#include <experimental/propagate_const>
-#include <memory>
+#include <set>
 
 export module rangequery.structures.std_set;
 
@@ -25,8 +24,7 @@ export class StdSet final {
   [[nodiscard]] Count size() const;
 
  private:
-  struct Impl;
-  std::experimental::propagate_const<std::unique_ptr<Impl>> impl_;
+  std::set<int> values_;
 };
 
 }  // namespace rq::structures

@@ -434,6 +434,59 @@ TYPED_TEST(ValueSemanticsTest, MoveAssignmentHandlesExistingStateAndSelfMove) {
   expect_matches_reference(target, source_values);
 }
 
+TYPED_TEST(ValueSemanticsTest, CopiesAndMovesAfterDuplicateInsertionsRemainIndependent) {
+  const std::set<int> values{-7, 0, 8, 42, 101};
+  TypeParam moved;
+  TypeParam copied;
+  {
+    TypeParam source;
+    insert_all(source, values);
+    for (const int value : values) source.insert(value);
+    TypeParam copy(source);
+    copied = copy;
+    for (const int value : values) source.insert(value);
+    moved = std::move(source);
+    expect_matches_reference(source, {});
+    source.insert(-101);
+    expect_matches_reference(source, {-101});
+  }
+  moved.insert(999);
+  copied.insert(-999);
+  auto moved_values = values;
+  moved_values.insert(999);
+  auto copied_values = values;
+  copied_values.insert(-999);
+  expect_matches_reference(moved, moved_values);
+  expect_matches_reference(copied, copied_values);
+
+  for (const int value : moved_values) moved.insert(value);
+  TypeParam destination(std::move(moved));
+  expect_matches_reference(moved, {});
+  destination.insert(1000);
+  moved.insert(-1000);
+  moved_values.insert(1000);
+  expect_matches_reference(destination, moved_values);
+  expect_matches_reference(moved, {-1000});
+}
+
+TYPED_TEST(ValueSemanticsTest, ReplacesAndDestroysLargeOwnedStates) {
+  TypeParam source;
+  TypeParam target;
+  for (int value = 0; value < 10000; ++value) {
+    source.insert(value);
+    target.insert(-value - 1);
+  }
+  TypeParam copy(source);
+  target = source;
+  EXPECT_EQ(copy.size(), 10000U);
+  EXPECT_EQ(target.select(10000), 9999);
+  target = std::move(copy);
+  EXPECT_EQ(copy.size(), 0U);
+  EXPECT_EQ(target.count_less(5000), 5000U);
+  copy.insert(-1);
+  EXPECT_EQ(copy.select(1), -1);
+}
+
 TEST(OrderedVectorContract, MatchesCommonApi) {
   rq::structures::OrderedVector structure;
   check_order_statistics(structure);

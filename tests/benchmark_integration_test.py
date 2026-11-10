@@ -125,6 +125,57 @@ class BenchmarkChecks(unittest.TestCase):
         self.assertEqual(result["benchmark_iterations"], 1)
         self.assertEqual(result["benchmark_version"], "1.9.4")
 
+    def test_library_help_and_cli_errors(self) -> None:
+        for option in ("-h", "--help"):
+            with self.subTest(option=option):
+                result = subprocess.run(
+                    [str(self.runner), option], input="invalid stdin", text=True,
+                    capture_output=True, check=False, timeout=10,
+                )
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stderr, "")
+                for fragment in ("[OPTIONS]", "--structure", "--mode", "--setup-count"):
+                    self.assertIn(fragment, result.stdout)
+
+        valid = ["--structure", "avl", "--mode", "dynamic", "--setup-count", "3"]
+        invalid = [
+            ([], "--structure"),
+            (["--structure"], "--structure"),
+            (["--structure", "wrong", "--mode", "queries"], "--structure"),
+            (["--structure", "avl"], "--mode"),
+            (["--structure", "avl", "--mode"], "--mode"),
+            (["--structure", "avl", "--mode", "wrong"], "--mode"),
+            (["--structure", "avl", "--mode", "dynamic"], "--setup-count"),
+            (["--structure", "avl", "--mode", "queries", "--setup-count", "3"], "--setup-count"),
+            (["--structure", "avl", "--mode", "insert", "--setup-count", "3"], "--setup-count"),
+            (valid + ["--unknown"], "--unknown"),
+        ]
+        for option, value in (("--structure", "treap"), ("--mode", "dynamic"),
+                              ("--setup-count", "3")):
+            invalid.append((valid + [option, value], option))
+        invalid.append((valid[:-1], "--setup-count"))
+        for value in ("0", "-1", "invalid", "1.5", "1x", "18446744073709551616"):
+            invalid.append((valid[:-1] + [value], "--setup-count"))
+        for arguments, fragment in invalid:
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(
+                    [str(self.runner), *arguments], input="invalid stdin", text=True,
+                    capture_output=True, check=False, timeout=10,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertIn(fragment, result.stderr)
+
+    def test_equals_syntax_preserves_query_checksum(self) -> None:
+        result = subprocess.run(
+            [str(self.runner), "--structure=treap", "--mode=queries"],
+            input=QUERY_PAYLOAD, text=True, capture_output=True, check=False, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        parsed = benchmark.parse_runner_output(result.stdout)
+        self.assertEqual(parsed["validation_checksum"], QUERY_CHECKSUM)
+
     def test_query_runner_for_every_structure(self) -> None:
         for structure in benchmark.STRUCTURES:
             with self.subTest(structure=structure):

@@ -1,7 +1,6 @@
 #include <benchmark/benchmark.h>
 
 #include <algorithm>
-#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -19,20 +18,13 @@
 #include <variant>
 #include <vector>
 
+import rangequery.config;
 import rangequery.structures.factory;
 
 namespace {
 
-enum class BenchmarkMode { queries, insert, dynamic };
-
-struct Settings {
-  std::size_t setup_count{};
-  rq::StructureKind structure{rq::StructureKind::ordered_vector};
-  BenchmarkMode mode{BenchmarkMode::queries};
-  bool has_structure{false};
-  bool has_mode{false};
-  bool has_setup_count{false};
-};
+using rq::BenchmarkMode;
+using Settings = rq::BenchmarkSettings;
 
 struct Command {
   char kind{};
@@ -56,69 +48,6 @@ struct Measurement {
 
 constexpr std::uint64_t kFnvOffset = 14'695'981'039'346'656'037ULL;
 constexpr std::uint64_t kFnvPrime = 1'099'511'628'211ULL;
-
-std::expected<Settings, std::string_view> read_settings(const int argc, char* argv[]) {
-  Settings settings;
-  for (int index = 1; index < argc; ++index) {
-    const std::string_view argument{argv[index]};
-    if (argument == "--structure" && index + 1 < argc) {
-      const std::string_view value{argv[++index]};
-      settings.has_structure = true;
-      const auto structure = rq::parse_structure_name(value);
-      if (!structure) {
-        return std::unexpected<std::string_view>{
-            "unknown structure; expected vector, set, avl, or treap"};
-      }
-      settings.structure = *structure;
-    } else if (argument == "--mode" && index + 1 < argc) {
-      const std::string_view value{argv[++index]};
-      settings.has_mode = true;
-      if (value == "queries") {
-        settings.mode = BenchmarkMode::queries;
-      } else if (value == "insert") {
-        settings.mode = BenchmarkMode::insert;
-      } else if (value == "dynamic") {
-        settings.mode = BenchmarkMode::dynamic;
-      } else {
-        return std::unexpected<std::string_view>{
-            "unknown mode; expected queries, insert, or dynamic"};
-      }
-    } else if (argument == "--setup-count" && index + 1 < argc) {
-      const std::string_view value{argv[++index]};
-      std::size_t setup_count{};
-      const auto [end, conversion_error] =
-          std::from_chars(value.data(), value.data() + value.size(), setup_count);
-      if (conversion_error != std::errc{} || end != value.data() + value.size() ||
-          setup_count == 0) {
-        return std::unexpected<std::string_view>{"--setup-count requires a positive integer"};
-      } else {
-        settings.has_setup_count = true;
-        settings.setup_count = setup_count;
-      }
-    } else if (argument == "--structure") {
-      return std::unexpected<std::string_view>{"--structure requires a value"};
-    } else if (argument == "--mode") {
-      return std::unexpected<std::string_view>{"--mode requires a value"};
-    } else if (argument == "--setup-count") {
-      return std::unexpected<std::string_view>{"--setup-count requires a value"};
-    } else {
-      return std::unexpected<std::string_view>{"unknown command-line argument"};
-    }
-  }
-  if (!settings.has_structure) {
-    return std::unexpected<std::string_view>{"--structure is required"};
-  }
-  if (!settings.has_mode) {
-    return std::unexpected<std::string_view>{"--mode is required"};
-  }
-  if (settings.mode == BenchmarkMode::dynamic && !settings.has_setup_count) {
-    return std::unexpected<std::string_view>{"dynamic mode requires --setup-count"};
-  }
-  if (settings.mode != BenchmarkMode::dynamic && settings.has_setup_count) {
-    return std::unexpected<std::string_view>{"--setup-count is only valid in dynamic mode"};
-  }
-  return settings;
-}
 
 std::expected<std::vector<Command>, std::string_view> read_commands() {
   std::vector<Command> commands;
@@ -404,11 +333,8 @@ void run_benchmark(benchmark::State& state, Set& structure, const std::vector<Co
 }  // namespace
 
 int main(const int argc, char* argv[]) try {
-  const auto settings = read_settings(argc, argv);
-  if (!settings) {
-    std::println(stderr, "{}", settings.error());
-    return 2;
-  }
+  const auto settings = rq::read_benchmark_command_line(argc, argv);
+  if (!settings) return settings.error();
 
   auto commands = read_commands();
   if (!commands) {

@@ -1,7 +1,7 @@
 module;
 
-#include <experimental/propagate_const>
 #include <memory>
+#include <vector>
 
 export module rangequery.structures.avl;
 
@@ -25,8 +25,11 @@ export class AvlTree final {
   [[nodiscard]] Count size() const;
 
  private:
-  struct Impl;
-  std::experimental::propagate_const<std::unique_ptr<Impl>> impl_;
+  struct Node;
+  std::unique_ptr<Node> root_;
+  std::vector<std::unique_ptr<Node>*> insertion_path_;
+
+  void swap(AvlTree& other) noexcept;
 };
 
 }  // namespace rq::structures
