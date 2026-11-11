@@ -128,21 +128,8 @@ std::expected<WorkloadLayout, std::string_view> validate_layout(
   return layout;
 }
 
-// The runner owns repetitions and workload selection. Do not let Google
-// Benchmark environment defaults introduce warmup passes or extra output files.
-void initialize_benchmark() {
-  std::vector<std::string> arguments{
-      "rangequery_benchmark",
-      "--benchmark_min_warmup_time=0",
-      "--benchmark_list_tests=false",
-      "--benchmark_out=",
-      "--v=0",
-  };
-  std::vector<char*> argv;
-  for (auto& argument : arguments) argv.push_back(argument.data());
-  int argc = static_cast<int>(argv.size());
-  argv.push_back(nullptr);
-  benchmark::Initialize(&argc, argv.data());
+void initialize_benchmark(int* argc, char** argv) {
+  benchmark::Initialize(argc, argv);
 }
 
 class MeasurementReporter final : public benchmark::BenchmarkReporter {
@@ -304,7 +291,7 @@ int main(int argc, char* argv[]) try {
     std::println(stderr, "{}", structure.error());
     return 2;
   }
-  initialize_benchmark();
+  initialize_benchmark(&argc, argv);
   Measurement measurement;
   std::size_t invocation_count{};
   std::visit(

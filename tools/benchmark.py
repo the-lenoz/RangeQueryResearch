@@ -299,7 +299,14 @@ def execute_case(
     execution_order: int,
     metadata: dict[str, object],
 ) -> dict[str, object]:
-    arguments = [str(runner), "--structure", case.structure, "--mode", case.mode]
+    arguments = [
+        str(runner),
+        "--structure",
+        case.structure,
+        "--mode",
+        case.mode,
+        "--benchmark_min_warmup_time=0",
+    ]
     if case.mode == "dynamic":
         arguments.extend(("--setup-count", str(case.setup_operation_count)))
     completed = subprocess.run(

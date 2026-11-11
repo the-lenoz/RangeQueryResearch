@@ -5,10 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -148,7 +146,6 @@ class BenchmarkChecks(unittest.TestCase):
             (["--structure", "avl", "--mode", "dynamic"], "--setup-count"),
             (["--structure", "avl", "--mode", "queries", "--setup-count", "3"], "--setup-count"),
             (["--structure", "avl", "--mode", "insert", "--setup-count", "3"], "--setup-count"),
-            (valid + ["--unknown"], "--unknown"),
         ]
         for option, value in (("--structure", "treap"), ("--mode", "dynamic"),
                               ("--setup-count", "3")):
@@ -165,6 +162,28 @@ class BenchmarkChecks(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertEqual(result.stdout, "")
                 self.assertIn(fragment, result.stderr)
+
+    def test_google_benchmark_flags_are_forwarded(self) -> None:
+        result = subprocess.run(
+            [
+                str(self.runner),
+                "--structure",
+                "treap",
+                "--mode",
+                "queries",
+                "--benchmark_min_warmup_time=0",
+            ],
+            input=QUERY_PAYLOAD,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(
+            benchmark.parse_runner_output(result.stdout)["validation_checksum"], QUERY_CHECKSUM
+        )
 
     def test_equals_syntax_preserves_query_checksum(self) -> None:
         result = subprocess.run(
@@ -202,25 +221,6 @@ class BenchmarkChecks(unittest.TestCase):
                 self.assert_success(
                     structure, "dynamic", DYNAMIC_PAYLOAD, 8, expected, setup_count=3
                 )
-
-    def test_benchmark_environment_cannot_change_workload_passes_or_protocol(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            unexpected_output = Path(directory) / "unexpected.json"
-            overrides = {
-                "BENCHMARK_MIN_WARMUP_TIME": "60",
-                "BENCHMARK_REPETITIONS": "3",
-                "BENCHMARK_FILTER": "nothing_matches",
-                "BENCHMARK_LIST_TESTS": "true",
-                "BENCHMARK_OUT": str(unexpected_output),
-                "V": "3",
-            }
-            with mock.patch.dict(os.environ, overrides):
-                for structure in benchmark.STRUCTURES:
-                    with self.subTest(structure=structure):
-                        self.assert_success(
-                            structure, "insert", INSERT_PAYLOAD, 6, INSERT_CHECKSUM
-                        )
-            self.assertFalse(unexpected_output.exists())
 
     def test_workload_generator_expected_answers(self) -> None:
         for query_kind in ("rank", "select", "range", "mixed"):
@@ -395,6 +395,7 @@ class BenchmarkChecks(unittest.TestCase):
         self.assertEqual(row["successful_insert_count"], 100)
         self.assertEqual(row["insert_fraction"], 0.1)
         self.assertIn("--setup-count", run.call_args.args[0])
+        self.assertIn("--benchmark_min_warmup_time=0", run.call_args.args[0])
 
 
 def main() -> None:

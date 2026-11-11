@@ -23,6 +23,8 @@ export [[nodiscard]] std::expected<BenchmarkSettings, int> read_benchmark_comman
     int argc, char* argv[]) {
   BenchmarkSettings settings;
   CLI::App app{"Measure order-statisctic set operations from a stdin workload"};
+  // Google Benchmark parses its own flags after this application-specific CLI.
+  app.allow_extras();
   rq::add_structure_option(app, settings.structure)->required();
   const std::map<std::string, BenchmarkMode> modes{{"queries", BenchmarkMode::queries},
                                                    {"insert", BenchmarkMode::insert},
