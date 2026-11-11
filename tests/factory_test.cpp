@@ -1,27 +1,63 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <array>
+#include <optional>
 #include <string_view>
+#include <variant>
 
 import rangequery.structures.factory;
 
-TEST(StructureFactory, CreatesEverySupportedAlternative) {
-  const std::array kinds{
-      rq::StructureKind::ordered_vector,
-      rq::StructureKind::std_set,
-      rq::StructureKind::avl,
-      rq::StructureKind::treap,
-  };
-
-  for (std::size_t index = 0; index < kinds.size(); ++index) {
-    const auto structure = rq::structures::make_structure(kinds[index]);
-    ASSERT_TRUE(structure.has_value()) << "kind=" << rq::to_string(kinds[index]);
-    EXPECT_EQ(structure->index(), index);
-  }
-}
+using namespace ::testing;
 
 TEST(StructureFactory, RejectsUnknownKind) {
-  const auto structure = rq::structures::make_structure(static_cast<rq::StructureKind>(-1));
+  const auto kind = static_cast<rq::StructureKind>(-1);
+
+  const auto structure = rq::structures::make_structure(kind);
 
   ASSERT_FALSE(structure.has_value());
   EXPECT_EQ(structure.error(), std::string_view{"unknown structure kind"});
+}
+
+TEST(StructureFactory, CreatesEmptyVector) {
+  const auto kind = rq::StructureKind::ordered_vector;
+
+  const auto structure = rq::structures::make_structure(kind);
+  const auto* selected =
+      structure ? std::get_if<rq::structures::OrderedVector>(&*structure) : nullptr;
+  const auto size = selected ? std::optional{selected->size()} : std::nullopt;
+
+  ASSERT_NE(selected, nullptr);
+  EXPECT_THAT(size, Optional(0U));
+}
+
+TEST(StructureFactory, CreatesEmptySet) {
+  const auto kind = rq::StructureKind::std_set;
+
+  const auto structure = rq::structures::make_structure(kind);
+  const auto* selected = structure ? std::get_if<rq::structures::StdSet>(&*structure) : nullptr;
+  const auto size = selected ? std::optional{selected->size()} : std::nullopt;
+
+  ASSERT_NE(selected, nullptr);
+  EXPECT_THAT(size, Optional(0U));
+}
+
+TEST(StructureFactory, CreatesEmptyAvl) {
+  const auto kind = rq::StructureKind::avl;
+
+  const auto structure = rq::structures::make_structure(kind);
+  const auto* selected = structure ? std::get_if<rq::structures::AvlTree>(&*structure) : nullptr;
+  const auto size = selected ? std::optional{selected->size()} : std::nullopt;
+
+  ASSERT_NE(selected, nullptr);
+  EXPECT_THAT(size, Optional(0U));
+}
+
+TEST(StructureFactory, CreatesEmptyTreap) {
+  const auto kind = rq::StructureKind::treap;
+
+  const auto structure = rq::structures::make_structure(kind);
+  const auto* selected = structure ? std::get_if<rq::structures::Treap>(&*structure) : nullptr;
+  const auto size = selected ? std::optional{selected->size()} : std::nullopt;
+
+  ASSERT_NE(selected, nullptr);
+  EXPECT_THAT(size, Optional(0U));
 }

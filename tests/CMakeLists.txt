@@ -5,10 +5,15 @@ add_executable(rangequery_tests
   config_test.cpp
   factory_test.cpp
   structure_contract_test.cpp
+  value_semantics_test.cpp
 )
-target_link_libraries(rangequery_tests PRIVATE rangequery_modules GTest::gtest_main)
-target_compile_features(rangequery_tests PRIVATE cxx_std_23)
-add_dependencies(rangequery_tests rangequery rangequery_benchmark)
+target_sources(rangequery_tests PRIVATE
+  FILE_SET CXX_MODULES BASE_DIRS ${PROJECT_SOURCE_DIR}/src FILES
+    ${PROJECT_SOURCE_DIR}/src/benchmark/config.cppm
+)
+target_link_libraries(rangequery_tests PRIVATE
+  rangequery_modules CLI11::Module GTest::gtest_main GTest::gmock_main
+)
 
 include(GoogleTest)
 gtest_discover_tests(rangequery_tests DISCOVERY_MODE PRE_TEST)

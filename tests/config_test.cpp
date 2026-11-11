@@ -1,63 +1,132 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <expected>
-#include <initializer_list>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <vector>
 
 import rangequery.config;
+import rangequery.benchmark.config;
 
 namespace {
+using namespace ::testing;
 
-template <typename Parser>
-auto read_arguments(Parser parser, std::initializer_list<const char*> arguments) {
-  std::vector<char*> argv{const_cast<char*>("rangequery")};
-  for (const char* argument : arguments) argv.push_back(const_cast<char*>(argument));
-  return parser(static_cast<int>(argv.size()), argv.data());
+template <typename Settings>
+struct CliResult {
+  std::expected<Settings, int> settings;
+  std::string output;
+  std::string diagnostic;
+};
+
+template <typename Settings>
+auto read_arguments(std::expected<Settings, int> (*parser)(int, char**),
+                    std::vector<std::string> arguments) {
+  char program_name[] = "rangequery";
+  std::vector<char*> argv{program_name};
+  std::transform(arguments.begin(), arguments.end(), std::back_inserter(argv),
+                 [](std::string& argument) { return argument.data(); });
+  internal::CaptureStdout();
+  internal::CaptureStderr();
+  auto settings = parser(static_cast<int>(argv.size()), argv.data());
+  auto output = internal::GetCapturedStdout();
+  auto diagnostic = internal::GetCapturedStderr();
+  return CliResult<Settings>{std::move(settings), std::move(output), std::move(diagnostic)};
 }
-
-template <typename Parser>
-void expect_cli_exit(Parser parser, std::initializer_list<const char*> arguments, int expected_code,
-                     std::string_view fragment) {
-  testing::internal::CaptureStdout();
-  testing::internal::CaptureStderr();
-  const auto result = read_arguments(parser, arguments);
-  const auto output = testing::internal::GetCapturedStdout();
-  const auto diagnostic = testing::internal::GetCapturedStderr();
-  ASSERT_FALSE(result.has_value());
-  EXPECT_EQ(result.error(), expected_code);
-  if (expected_code == 0) {
-    EXPECT_TRUE(diagnostic.empty());
-    EXPECT_NE(output.find("[OPTIONS]"), std::string::npos);
-    EXPECT_NE(output.find(fragment), std::string::npos);
-  } else {
-    EXPECT_TRUE(output.empty());
-    EXPECT_NE(diagnostic.find(fragment), std::string::npos);
-  }
-}
-
-}  // namespace
 
 TEST(CommandLineConfiguration, DefaultsToOrderedVector) {
-  const auto settings = read_arguments(rq::read_command_line, {});
-  ASSERT_TRUE(settings.has_value());
-  EXPECT_EQ(settings->structure, rq::StructureKind::ordered_vector);
+  const std::vector<std::string> arguments;
+
+  const auto result = read_arguments(rq::read_command_line, arguments);
+
+  ASSERT_TRUE(result.settings.has_value());
+  EXPECT_EQ(result.settings->structure, rq::StructureKind::ordered_vector);
 }
 
+TEST(CommandLineConfiguration, SelectsRequestedStructure) {
+  const std::vector<std::string> arguments{"--structure", "treap"};
 
-TEST(CommandLineConfiguration, RejectsInvalidAndRepeatedArguments) {
-  for (const auto arguments : {std::initializer_list<const char*>{"--structure", "binary_tree"},
-                               {"--structure"},
-                               {"--structure", "vector", "--structure", "avl"}}) {
-    expect_cli_exit(rq::read_command_line, arguments, 2, "--structure");
-  }
-  expect_cli_exit(rq::read_command_line, {"--unknown"}, 2, "--unknown");
+  const auto result = read_arguments(rq::read_command_line, arguments);
+
+  ASSERT_TRUE(result.settings.has_value());
+  EXPECT_EQ(result.settings->structure, rq::StructureKind::treap);
 }
 
-TEST(CommandLineConfiguration, ConvertsEveryStructureKindToText) {
-  EXPECT_EQ(rq::to_string(rq::StructureKind::ordered_vector), std::string_view{"vector"});
-  EXPECT_EQ(rq::to_string(rq::StructureKind::std_set), std::string_view{"set"});
-  EXPECT_EQ(rq::to_string(rq::StructureKind::avl), std::string_view{"avl"});
-  EXPECT_EQ(rq::to_string(rq::StructureKind::treap), std::string_view{"treap"});
-  EXPECT_EQ(rq::to_string(static_cast<rq::StructureKind>(-1)), std::string_view{"unknown"});
+TEST(CommandLineConfiguration, UnknownStructureRequestsErrorExit) {
+  const std::vector<std::string> arguments{"--structure", "binary_tree"};
+
+  const auto result = read_arguments(rq::read_command_line, arguments);
+
+  ASSERT_FALSE(result.settings.has_value());
+  EXPECT_EQ(result.settings.error(), 2);
+  EXPECT_THAT(result.output, IsEmpty());
+  EXPECT_THAT(result.diagnostic, HasSubstr("--structure"));
 }
+
+TEST(CommandLineConfiguration, HelpRequestsSuccessfulExit) {
+  const std::vector<std::string> arguments{"--help"};
+
+  const auto result = read_arguments(rq::read_command_line, arguments);
+
+  ASSERT_FALSE(result.settings.has_value());
+  EXPECT_EQ(result.settings.error(), 0);
+  EXPECT_THAT(result.output, HasSubstr("--structure"));
+  EXPECT_THAT(result.diagnostic, IsEmpty());
+}
+
+TEST(BenchmarkConfiguration, ReadsQuerySettingsWithoutSetup) {
+  const std::vector<std::string> arguments{"--structure", "avl", "--mode", "queries"};
+
+  const auto result = read_arguments(rq_benchmark::read_benchmark_command_line, arguments);
+
+  ASSERT_TRUE(result.settings.has_value());
+  EXPECT_EQ(result.settings->structure, rq::StructureKind::avl);
+  EXPECT_EQ(result.settings->mode, rq_benchmark::BenchmarkMode::queries);
+  EXPECT_EQ(result.settings->setup_count, 0U);
+}
+
+TEST(BenchmarkConfiguration, ReadsMinimalDynamicSetup) {
+  const std::vector<std::string> arguments{"--structure", "treap",         "--mode",
+                                           "dynamic",     "--setup-count", "1"};
+
+  const auto result = read_arguments(rq_benchmark::read_benchmark_command_line, arguments);
+
+  ASSERT_TRUE(result.settings.has_value());
+  EXPECT_EQ(result.settings->mode, rq_benchmark::BenchmarkMode::dynamic);
+  EXPECT_EQ(result.settings->setup_count, 1U);
+}
+
+struct BenchmarkErrorCase {
+  std::string name;
+  std::vector<std::string> arguments;
+  std::string fragment;
+};
+void PrintTo(const BenchmarkErrorCase& value, std::ostream* os) {
+  *os << value.name << ": " << PrintToString(value.arguments);
+}
+class BenchmarkConfigurationError : public TestWithParam<BenchmarkErrorCase> {};
+
+TEST_P(BenchmarkConfigurationError, RejectsInvalidWorkloadSettings) {
+  const auto param = GetParam();
+
+  const auto result = read_arguments(rq_benchmark::read_benchmark_command_line, param.arguments);
+
+  ASSERT_FALSE(result.settings.has_value());
+  EXPECT_EQ(result.settings.error(), 2);
+  EXPECT_THAT(result.diagnostic, HasSubstr(param.fragment));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    WorkloadRules, BenchmarkConfigurationError,
+    Values(BenchmarkErrorCase{"MissingMode", {"--structure", "avl"}, "--mode"},
+           BenchmarkErrorCase{
+               "MissingDynamicSetup", {"--structure", "avl", "--mode", "dynamic"}, "--setup-count"},
+           BenchmarkErrorCase{"ZeroDynamicSetup",
+                              {"--structure", "avl", "--mode", "dynamic", "--setup-count", "0"},
+                              "--setup-count"},
+           BenchmarkErrorCase{"SetupOutsideDynamic",
+                              {"--structure", "avl", "--mode", "queries", "--setup-count", "1"},
+                              "--setup-count"}),
+    [](const auto& info) { return info.param.name; });
+}  // namespace

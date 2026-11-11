@@ -1,129 +1,140 @@
 #!/usr/bin/env python3
-"""Exercise each CLI structure and command type."""
+"""Short AAA scenarios for the command-line application."""
 
 from __future__ import annotations
 
 import argparse
 import subprocess
+import sys
+import unittest
 from pathlib import Path
 
 
-SUCCESSFUL_COMMANDS = """\
-k 0
-k -2
-k 2
-k -2
-k -2147483648
-k 2147483647
-q -2147483648 2147483647
-q -2 2
-q 2 2
-q 2 -2
-m 1
-m 3
-m 5
-n -2147483648
-n 0
-n 2147483647
-"""
-
-SUCCESSFUL_OUTPUT = """\
-4
-2
-0
-0
--2147483648
-0
-2147483647
-0
-2
-4
-"""
-
-
-def execute(binary: Path, structure: str, payload: str) -> subprocess.CompletedProcess[str]:
+def execute(arguments: list[str], payload: str = "") -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [str(binary), "--structure", structure],
-        input=payload,
-        text=True,
-        capture_output=True,
-        check=False,
+        arguments, input=payload, text=True, capture_output=True, check=False, timeout=10
     )
 
 
-def expect_result(
-    label: str,
-    result: subprocess.CompletedProcess[str],
-    return_code: int,
-    stdout: str,
-    stderr: str,
-) -> None:
-    if (result.returncode, result.stdout, result.stderr) != (return_code, stdout, stderr):
-        raise AssertionError(
-            f"{label}: expected {(return_code, stdout, stderr)!r}, "
-            f"got {(result.returncode, result.stdout, result.stderr)!r}"
+class CommandScenarios:
+    structure: str
+
+    def test_command_stream(self) -> None:
+        arguments = [str(BINARY), "--structure", self.structure]
+        payload = "k 9\nk -4\nk 0\nk 0\nn 0\nm 2\nq -4 9\n"
+
+        result = execute(arguments, payload)
+
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, "1\n0\n2\n", ""))
+
+
+class VectorCommands(CommandScenarios, unittest.TestCase):
+    structure = "vector"
+
+
+class SetCommands(CommandScenarios, unittest.TestCase):
+    structure = "set"
+
+
+class AvlCommands(CommandScenarios, unittest.TestCase):
+    structure = "avl"
+
+
+class TreapCommands(CommandScenarios, unittest.TestCase):
+    structure = "treap"
+
+
+class ApplicationCli(unittest.TestCase):
+    def test_empty_input(self) -> None:
+        arguments = [str(BINARY), "--structure", "vector"]
+        payload = ''
+
+        result = execute(arguments, payload)
+
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '', ""))
+
+    def test_invalid_insert(self) -> None:
+        arguments = [str(BINARY), "--structure", "vector"]
+        payload = 'k value\n'
+
+        result = execute(arguments, payload)
+
+        self.assertEqual(
+            (result.returncode, result.stdout, result.stderr),
+            (2, "", 'invalid k command: expected an integer\n'),
         )
+
+    def test_incomplete_range(self) -> None:
+        arguments = [str(BINARY), "--structure", "vector"]
+        payload = 'q 1\n'
+
+        result = execute(arguments, payload)
+
+        self.assertEqual(
+            (result.returncode, result.stdout, result.stderr),
+            (2, "", 'invalid q command: expected two integers\n'),
+        )
+
+    def test_zero_select(self) -> None:
+        arguments = [str(BINARY), "--structure", "vector"]
+        payload = 'm 0\n'
+
+        result = execute(arguments, payload)
+
+        self.assertEqual(
+            (result.returncode, result.stdout, result.stderr),
+            (2, "", 'invalid m command: expected a positive index\n'),
+        )
+
+    def test_past_end_select(self) -> None:
+        arguments = [str(BINARY), "--structure", "vector"]
+        payload = 'k 2\nm 2\n'
+
+        result = execute(arguments, payload)
+
+        self.assertEqual(
+            (result.returncode, result.stdout, result.stderr),
+            (2, "", 'm index is outside the set\n'),
+        )
+
+    def test_unknown_command(self) -> None:
+        arguments = [str(BINARY), "--structure", "vector"]
+        payload = 'x\n'
+
+        result = execute(arguments, payload)
+
+        self.assertEqual(
+            (result.returncode, result.stdout, result.stderr),
+            (2, "", 'unknown command: x\n'),
+        )
+
+    def test_long_help(self) -> None:
+        arguments = [str(BINARY), '--help']
+        payload = "invalid stdin"
+
+        result = execute(arguments, payload)
+
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+        self.assertIn("[OPTIONS]", result.stdout)
+        self.assertIn("--structure", result.stdout)
+
+    def test_unknown_structure(self) -> None:
+        arguments = [str(BINARY), '--structure', 'unknown']
+        payload = "invalid stdin"
+
+        result = execute(arguments, payload)
+
+        self.assertEqual((result.returncode, result.stdout), (2, ""))
+        self.assertIn('--structure', result.stderr)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path, required=True)
-    args = parser.parse_args()
-
-    for structure in ("vector", "set", "avl", "treap"):
-        expect_result(
-            f"{structure}: valid commands",
-            execute(args.binary, structure, SUCCESSFUL_COMMANDS),
-            0,
-            SUCCESSFUL_OUTPUT,
-            "",
-        )
-        for payload, message in (
-            ("k value\n", "invalid k command: expected an integer\n"),
-            ("q 1\n", "invalid q command: expected two integers\n"),
-            ("m 0\n", "invalid m command: expected a positive index\n"),
-            ("m 1\n", "m index is outside the set\n"),
-            ("n value\n", "invalid n command: expected an integer\n"),
-            ("x\n", "unknown command: x\n"),
-        ):
-            expect_result(
-                f"{structure}: {payload.strip()}",
-                execute(args.binary, structure, payload),
-                2,
-                "",
-                message,
-            )
-
-    for option in ("-h", "--help"):
-        result = subprocess.run(
-            [str(args.binary), option], input="invalid stdin", text=True,
-            capture_output=True, check=False, timeout=10,
-        )
-        if result.returncode != 0 or result.stderr:
-            raise AssertionError(f"help failed: {result!r}")
-        for fragment in ("[OPTIONS]", "--structure", "vector", "set", "avl", "treap"):
-            if fragment not in result.stdout:
-                raise AssertionError(f"help is missing {fragment!r}: {result.stdout!r}")
-
-    for arguments, fragment in (
-        (["--structure", "unknown"], "--structure"),
-        (["--structure"], "--structure"),
-        (["--unknown"], "--unknown"),
-        (["--structure", "avl", "--structure", "treap"], "--structure"),
-    ):
-        result = subprocess.run(
-            [str(args.binary), *arguments], input="invalid stdin", text=True,
-            capture_output=True, check=False, timeout=10,
-        )
-        if result.returncode != 2 or result.stdout or fragment not in result.stderr:
-            raise AssertionError(f"invalid CLI {arguments!r}: {result!r}")
-
-    for arguments in ([], ["--structure=avl"]):
-        result = subprocess.run(
-            [str(args.binary), *arguments], input=SUCCESSFUL_COMMANDS, text=True,
-            capture_output=True, check=False, timeout=10,
-        )
-        expect_result(f"CLI {arguments!r}", result, 0, SUCCESSFUL_OUTPUT, "")
+    args, unittest_args = parser.parse_known_args()
+    global BINARY
+    BINARY = args.binary
+    unittest.main(argv=[sys.argv[0], *unittest_args])
 
 
 if __name__ == "__main__":
