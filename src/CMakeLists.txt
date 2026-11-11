@@ -21,13 +21,13 @@ target_sources(rangequery_modules
 target_compile_features(rangequery_modules PUBLIC cxx_std_23)
 
 find_package(CLI11 2.7.2 EXACT CONFIG QUIET)
-if(NOT CLI11_FOUND)
+if(NOT CLI11_FOUND OR NOT TARGET CLI11::Module)
   include(FetchContent)
   set(CLI11_BUILD_TESTS OFF CACHE BOOL "" FORCE)
   set(CLI11_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
   set(CLI11_BUILD_DOCS OFF CACHE BOOL "" FORCE)
   set(CLI11_PRECOMPILED OFF CACHE BOOL "" FORCE)
-  set(CLI11_MODULES OFF CACHE BOOL "" FORCE)
+  set(CLI11_MODULES ON CACHE BOOL "" FORCE)
   FetchContent_Declare(CLI11
     URL https://codeload.github.com/CLIUtils/CLI11/tar.gz/refs/tags/v2.7.2
     URL_HASH SHA256=46eef3101da70852ec7af026e09d485ccee81813331c8c6052d39344443b83da
@@ -35,7 +35,7 @@ if(NOT CLI11_FOUND)
   )
   FetchContent_MakeAvailable(CLI11)
 endif()
-target_link_libraries(rangequery_modules PRIVATE CLI11::CLI11)
+target_link_libraries(rangequery_modules PRIVATE CLI11::Module)
 
 add_executable(rangequery main.cpp)
 target_link_libraries(rangequery PRIVATE rangequery_modules)
@@ -47,7 +47,7 @@ target_sources(rangequery_benchmark
       benchmark/config.cppm
       benchmark/utils.cppm
 )
-target_link_libraries(rangequery_benchmark PRIVATE CLI11::CLI11)
+target_link_libraries(rangequery_benchmark PRIVATE CLI11::Module)
 find_package(benchmark 1.9.4 EXACT CONFIG QUIET)
 if(NOT benchmark_FOUND)
   include(FetchContent)

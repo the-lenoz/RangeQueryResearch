@@ -1,10 +1,10 @@
 module;
 
-#include <CLI/CLI.hpp>
 #include <expected>
 
 export module rangequery.config;
 
+import cli11;
 export import rangequery.structures.kind;
 
 namespace rq {

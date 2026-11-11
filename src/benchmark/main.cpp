@@ -20,6 +20,7 @@ import rangequery.config;
 import rangequery.structures.factory;
 import rangequery.benchmark.config;
 import rangequery.benchmark.utils;
+import rangequery.structures.kind;
 
 namespace {
 

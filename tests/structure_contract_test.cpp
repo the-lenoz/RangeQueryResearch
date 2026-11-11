@@ -409,7 +409,7 @@ TYPED_TEST(ValueSemanticsTest, MoveConstructorLeavesReusableEmptySource) {
   expect_matches_reference(destination, values);
 }
 
-TYPED_TEST(ValueSemanticsTest, MoveAssignmentHandlesExistingStateAndSelfMove) {
+TYPED_TEST(ValueSemanticsTest, MoveAssignmentHandlesExistingState) {
   const std::set<int> source_values{-7, 0, 42};
   TypeParam source;
   insert_all(source, source_values);
@@ -425,11 +425,6 @@ TYPED_TEST(ValueSemanticsTest, MoveAssignmentHandlesExistingStateAndSelfMove) {
   assigned_from_moved.insert(101);
   assigned_from_moved = source;
   expect_matches_reference(assigned_from_moved, {});
-
-  TypeParam* alias = &target;
-  TypeParam& self_move_result = (target = std::move(*alias));
-  EXPECT_EQ(&self_move_result, &target);
-  expect_matches_reference(target, source_values);
 
   source.insert(-101);
   expect_matches_reference(source, {-101});

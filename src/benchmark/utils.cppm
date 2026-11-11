@@ -9,6 +9,7 @@ module;
 export module rangequery.benchmark.utils;
 
 import rangequery.structures.contracts;
+import rangequery.structures.kind;
 
 namespace rq_benchmark {
 

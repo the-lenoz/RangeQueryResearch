@@ -1,12 +1,13 @@
 module;
 
-#include <CLI/CLI.hpp>
-
 #include <expected>
 #include <map>
 #include <string>
+#include <typeinfo>
 
 module rangequery.config;
+
+import cli11;
 
 namespace rq {
 

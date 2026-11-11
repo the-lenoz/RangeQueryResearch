@@ -5,6 +5,7 @@
 
 import rangequery.config;
 import rangequery.structures.factory;
+import rangequery.structures.kind;
 
 namespace {
 constexpr int kInvalidInputExitCode = 2;

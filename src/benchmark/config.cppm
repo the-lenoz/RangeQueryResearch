@@ -1,12 +1,16 @@
 module;
 
 #include <expected>
-#include <CLI/CLI.hpp>
+#include <map>
+#include <string>
+#include <typeinfo>
+#include <utility>
 
 export module rangequery.benchmark.config;
 
+import cli11;
 import rangequery.config;
-
+import rangequery.structures.kind;
 
 namespace rq_benchmark {
 
