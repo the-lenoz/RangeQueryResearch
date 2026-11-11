@@ -41,7 +41,13 @@ add_executable(rangequery main.cpp)
 target_link_libraries(rangequery PRIVATE rangequery_modules)
 
 add_executable(rangequery_benchmark benchmark/main.cpp)
-
+target_sources(rangequery_benchmark
+  PRIVATE
+    FILE_SET CXX_MODULES FILES
+      benchmark/config.cppm
+      benchmark/utils.cppm
+)
+target_link_libraries(rangequery_benchmark PRIVATE CLI11::CLI11)
 find_package(benchmark 1.9.4 EXACT CONFIG QUIET)
 if(NOT benchmark_FOUND)
   include(FetchContent)

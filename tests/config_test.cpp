@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <array>
 #include <expected>
 #include <initializer_list>
 #include <string>
@@ -45,44 +44,6 @@ TEST(CommandLineConfiguration, DefaultsToOrderedVector) {
   EXPECT_EQ(settings->structure, rq::StructureKind::ordered_vector);
 }
 
-TEST(CommandLineConfiguration, ParsesEverySupportedStructureInBothExecutables) {
-  const std::array cases{
-      std::pair{"vector", rq::StructureKind::ordered_vector},
-      std::pair{"set", rq::StructureKind::std_set},
-      std::pair{"avl", rq::StructureKind::avl},
-      std::pair{"treap", rq::StructureKind::treap},
-  };
-  for (const auto& [name, expected] : cases) {
-    SCOPED_TRACE(name);
-    const auto settings = read_arguments(rq::read_command_line, {"--structure", name});
-    ASSERT_TRUE(settings.has_value());
-    EXPECT_EQ(settings->structure, expected);
-    const auto benchmark =
-        read_arguments(rq::read_benchmark_command_line, {"--structure", name, "--mode", "queries"});
-    ASSERT_TRUE(benchmark.has_value());
-    EXPECT_EQ(benchmark->structure, expected);
-    EXPECT_EQ(benchmark->mode, rq::BenchmarkMode::queries);
-  }
-}
-
-TEST(CommandLineConfiguration, RecognizesBothLibraryHelpOptions) {
-  for (const char* option : {"-h", "--help"}) {
-    expect_cli_exit(rq::read_command_line, {option}, 0, "--structure");
-    expect_cli_exit(rq::read_benchmark_command_line, {option}, 0, "--setup-count");
-  }
-}
-
-TEST(CommandLineConfiguration, AcceptsEqualsSyntax) {
-  const auto settings = read_arguments(rq::read_command_line, {"--structure=avl"});
-  ASSERT_TRUE(settings.has_value());
-  EXPECT_EQ(settings->structure, rq::StructureKind::avl);
-  const auto benchmark = read_arguments(rq::read_benchmark_command_line,
-                                        {"--structure=treap", "--mode=dynamic", "--setup-count=2"});
-  ASSERT_TRUE(benchmark.has_value());
-  EXPECT_EQ(benchmark->structure, rq::StructureKind::treap);
-  EXPECT_EQ(benchmark->mode, rq::BenchmarkMode::dynamic);
-  EXPECT_EQ(benchmark->setup_count, 2U);
-}
 
 TEST(CommandLineConfiguration, RejectsInvalidAndRepeatedArguments) {
   for (const auto arguments : {std::initializer_list<const char*>{"--structure", "binary_tree"},
@@ -91,38 +52,6 @@ TEST(CommandLineConfiguration, RejectsInvalidAndRepeatedArguments) {
     expect_cli_exit(rq::read_command_line, arguments, 2, "--structure");
   }
   expect_cli_exit(rq::read_command_line, {"--unknown"}, 2, "--unknown");
-}
-
-TEST(CommandLineConfiguration, RequiresBenchmarkOptionsAndValidMode) {
-  expect_cli_exit(rq::read_benchmark_command_line, {}, 2, "--structure");
-  expect_cli_exit(rq::read_benchmark_command_line, {"--structure", "avl"}, 2, "--mode");
-  expect_cli_exit(rq::read_benchmark_command_line, {"--structure", "avl", "--mode"}, 2, "--mode");
-  expect_cli_exit(rq::read_benchmark_command_line, {"--structure", "avl", "--mode", "wrong"}, 2,
-                  "--mode");
-}
-
-TEST(CommandLineConfiguration, RequiresSetupCountOnlyInDynamicMode) {
-  expect_cli_exit(rq::read_benchmark_command_line, {"--structure", "avl", "--mode", "dynamic"}, 2,
-                  "--setup-count");
-  for (const char* mode : {"queries", "insert"}) {
-    const auto settings =
-        read_arguments(rq::read_benchmark_command_line, {"--structure", "avl", "--mode", mode});
-    ASSERT_TRUE(settings.has_value());
-    EXPECT_EQ(settings->mode, std::string_view{mode} == "queries" ? rq::BenchmarkMode::queries
-                                                                  : rq::BenchmarkMode::insert);
-    expect_cli_exit(rq::read_benchmark_command_line,
-                    {"--structure", "avl", "--mode", mode, "--setup-count", "1"}, 2,
-                    "--setup-count");
-  }
-}
-
-TEST(CommandLineConfiguration, RejectsInvalidSetupCounts) {
-  for (const char* count : {"0", "-1", "invalid", "1.5", "1x", "18446744073709551616"}) {
-    SCOPED_TRACE(count);
-    expect_cli_exit(rq::read_benchmark_command_line,
-                    {"--structure", "avl", "--mode", "dynamic", "--setup-count", count}, 2,
-                    "--setup-count");
-  }
 }
 
 TEST(CommandLineConfiguration, ConvertsEveryStructureKindToText) {

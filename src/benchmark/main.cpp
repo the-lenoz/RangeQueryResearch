@@ -8,11 +8,9 @@
 #include <expected>
 #include <iomanip>
 #include <iostream>
-#include <limits>
 #include <print>
 #include <ranges>
 #include <sstream>
-#include <string>
 #include <string_view>
 #include <utility>
 #include <variant>
@@ -20,11 +18,13 @@
 
 import rangequery.config;
 import rangequery.structures.factory;
+import rangequery.benchmark.config;
+import rangequery.benchmark.utils;
 
 namespace {
 
-using rq::BenchmarkMode;
-using Settings = rq::BenchmarkSettings;
+using rq_benchmark::BenchmarkMode;
+using Settings = rq_benchmark::BenchmarkSettings;
 
 struct Command {
   char kind{};
@@ -45,9 +45,6 @@ struct Measurement {
   std::uint64_t validation_checksum{};
   benchmark::IterationCount benchmark_iterations{};
 };
-
-constexpr std::uint64_t kFnvOffset = 14'695'981'039'346'656'037ULL;
-constexpr std::uint64_t kFnvPrime = 1'099'511'628'211ULL;
 
 std::expected<std::vector<Command>, std::string_view> read_commands() {
   std::vector<Command> commands;
@@ -92,8 +89,7 @@ std::expected<WorkloadLayout, std::string_view> validate_layout(
     return std::unexpected<std::string_view>{"workload must not be empty"};
   }
   if (settings.mode == BenchmarkMode::insert) {
-    if (!std::ranges::all_of(
-            commands, [](char kind) { return kind == 'k'; }, &Command::kind)) {
+    if (!std::ranges::all_of(commands, [](char kind) { return kind == 'k'; }, &Command::kind)) {
       return std::unexpected<std::string_view>{"insert mode accepts only k commands"};
     }
     layout.measured_count = commands.size();
@@ -185,19 +181,6 @@ class MeasurementReporter final : public benchmark::BenchmarkReporter {
   bool failed_{};
 };
 
-void hash_byte(std::uint64_t& checksum, std::uint8_t value) {
-  checksum ^= value;
-  checksum *= kFnvPrime;
-}
-
-void hash_record(std::uint64_t& checksum, std::uint8_t code, bool has_value, std::uint64_t value) {
-  hash_byte(checksum, code);
-  hash_byte(checksum, has_value ? 1 : 0);
-  for (unsigned shift = 0; shift < 64; shift += 8) {
-    hash_byte(checksum, static_cast<std::uint8_t>(value >> shift));
-  }
-}
-
 template <rq::structures::OrderStatisticSet Set>
 std::pair<bool, std::uint64_t> query_result(const Set& structure, const Command& command) {
   if (command.kind == 'q') {
@@ -212,52 +195,20 @@ std::pair<bool, std::uint64_t> query_result(const Set& structure, const Command&
 template <rq::structures::OrderStatisticSet Set>
 std::uint64_t validate_queries(const Set& structure, const std::vector<Command>& commands,
                                std::size_t setup_count) {
-  std::uint64_t checksum = kFnvOffset;
+  std::uint64_t checksum = rq_benchmark::fnv_offset;
   for (const Command& command : commands | std::views::drop(setup_count)) {
     const auto [has_value, value] = query_result(structure, command);
-    hash_record(checksum, static_cast<std::uint8_t>(command.kind), has_value, value);
+    rq_benchmark::hash_record(checksum, static_cast<std::uint8_t>(command.kind), has_value, value);
   }
   return checksum;
-}
-
-template <rq::structures::OrderStatisticSet Set>
-void hash_structure_state(std::uint64_t& checksum, const Set& structure, std::vector<int> values) {
-  std::ranges::sort(values);
-  values.erase(std::ranges::unique(values).begin(), values.end());
-
-  hash_record(checksum, static_cast<std::uint8_t>('s'), true, structure.size());
-
-  std::vector<unsigned long long> indices{
-      1,
-      1 + static_cast<unsigned long long>(values.size() / 4),
-      1 + static_cast<unsigned long long>(values.size() / 2),
-      1 + static_cast<unsigned long long>((3 * values.size()) / 4),
-      static_cast<unsigned long long>(values.size()),
-  };
-  std::ranges::sort(indices);
-  indices.erase(std::ranges::unique(indices).begin(), indices.end());
-  for (const auto index : indices) {
-    const auto selection = structure.select(index);
-    hash_record(checksum, static_cast<std::uint8_t>('m'), selection.has_value(),
-                static_cast<std::uint64_t>(static_cast<std::int64_t>(selection.value_or(0))));
-  }
-
-  const std::vector probes{
-      std::numeric_limits<int>::min(), 0,
-      std::numeric_limits<int>::max(), values.front(),
-      values[values.size() / 2],       values.back(),
-  };
-  for (const int probe : probes) {
-    hash_record(checksum, static_cast<std::uint8_t>('n'), true, structure.count_less(probe));
-  }
 }
 
 template <rq::structures::OrderStatisticSet Set>
 std::uint64_t validate_insertions(const Set& structure, const std::vector<Command>& commands) {
   std::vector<int> values{std::from_range, commands | std::views::transform(&Command::first)};
 
-  std::uint64_t checksum = kFnvOffset;
-  hash_structure_state(checksum, structure, std::move(values));
+  std::uint64_t checksum = rq_benchmark::fnv_offset;
+  rq_benchmark::hash_structure_state(checksum, structure, std::move(values));
   return checksum;
 }
 
@@ -272,17 +223,18 @@ std::uint64_t validate_dynamic(const Set& measured_structure, const std::vector<
     values.push_back(commands[index].first);
   }
 
-  std::uint64_t checksum = kFnvOffset;
+  std::uint64_t checksum = rq_benchmark::fnv_offset;
   for (const Command& command : commands | std::views::drop(setup_count)) {
     if (command.kind == 'k') {
       replay.insert(command.first);
       values.push_back(command.first);
     } else {
       const auto [has_value, value] = query_result(replay, command);
-      hash_record(checksum, static_cast<std::uint8_t>(command.kind), has_value, value);
+      rq_benchmark::hash_record(checksum, static_cast<std::uint8_t>(command.kind), has_value,
+                                value);
     }
   }
-  hash_structure_state(checksum, measured_structure, std::move(values));
+  rq_benchmark::hash_structure_state(checksum, measured_structure, std::move(values));
   return checksum;
 }
 
@@ -333,7 +285,7 @@ void run_benchmark(benchmark::State& state, Set& structure, const std::vector<Co
 }  // namespace
 
 int main(int argc, char* argv[]) try {
-  const auto settings = rq::read_benchmark_command_line(argc, argv);
+  const auto settings = rq_benchmark::read_benchmark_command_line(argc, argv);
   if (!settings) return settings.error();
 
   auto commands = read_commands();
