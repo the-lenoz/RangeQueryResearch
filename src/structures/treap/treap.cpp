@@ -1,6 +1,5 @@
 module;
 
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -10,36 +9,8 @@ module rangequery.structures.treap;
 
 namespace rq::structures {
 
-constexpr std::uint64_t Treap::SplitMix64::operator()() noexcept {
-  std::uint64_t value = (state += 0x9e37'79b9'7f4a'7c15ULL);
-  value = (value ^ (value >> 30)) * 0xbf58'476d'1ce4'e5b9ULL;
-  value = (value ^ (value >> 27)) * 0x94d0'49bb'1331'11ebULL;
-  return value ^ (value >> 31);
-}
-
-struct Treap::Node {
-  Node(const int key_value, const std::uint64_t priority_value)
-      : key(key_value), priority(priority_value) {}
-
-  int key;
-  std::uint64_t priority;
-  Count subtree_size{1};
-  std::unique_ptr<Node> left;
-  std::unique_ptr<Node> right;
-
-  static void clear(std::unique_ptr<Node>& node) noexcept;
-  static std::unique_ptr<Node> clone(const std::unique_ptr<Node>& node);
-  static Count size(const std::unique_ptr<Node>& node);
-  static void update(Node& node);
-  static void rotate_left(std::unique_ptr<Node>& node);
-  static void rotate_right(std::unique_ptr<Node>& node);
-  static bool insert(std::unique_ptr<Node>& node, const int value, SplitMix64& random,
-                     std::vector<std::unique_ptr<Node>*>& path);
-  static Count count_less(const std::unique_ptr<Node>& node, const int value);
-  static Count count_less_or_equal(const std::unique_ptr<Node>& node, const int value);
-  static Selection select(const std::unique_ptr<Node>& node, const Count index);
-};
-
+// Iterative clear method is required to prevent stack overflow
+// because the treap structure does not guarantee logarythmic heigth
 void Treap::Node::clear(std::unique_ptr<Node>& node) noexcept {
   while (node) {
     if (node->left) {
@@ -82,14 +53,6 @@ std::unique_ptr<Treap::Node> Treap::Node::clone(const std::unique_ptr<Node>& nod
   return copy;
 }
 
-Count Treap::Node::size(const std::unique_ptr<Node>& node) {
-  return node ? node->subtree_size : 0;
-}
-
-void Treap::Node::update(Node& node) {
-  node.subtree_size = 1 + size(node.left) + size(node.right);
-}
-
 void Treap::Node::rotate_left(std::unique_ptr<Node>& node) {
   auto pivot = std::move(node->right);
   node->right = std::move(pivot->left);
@@ -108,7 +71,7 @@ void Treap::Node::rotate_right(std::unique_ptr<Node>& node) {
   node = std::move(pivot);
 }
 
-bool Treap::Node::insert(std::unique_ptr<Node>& node, const int value, SplitMix64& random,
+bool Treap::Node::insert(std::unique_ptr<Node>& node, int value, SplitMix64& random,
                          std::vector<std::unique_ptr<Node>*>& path) {
   path.clear();
   auto* link = &node;
@@ -134,8 +97,8 @@ bool Treap::Node::insert(std::unique_ptr<Node>& node, const int value, SplitMix6
   return true;
 }
 
-Count Treap::Node::count_less(const std::unique_ptr<Node>& node, const int value) {
-  Count result = 0;
+unsigned long long Treap::Node::count_less(const std::unique_ptr<Node>& node, int value) {
+  unsigned long long result = 0;
   const Node* current = node.get();
   while (current) {
     if (value <= current->key) {
@@ -148,8 +111,8 @@ Count Treap::Node::count_less(const std::unique_ptr<Node>& node, const int value
   return result;
 }
 
-Count Treap::Node::count_less_or_equal(const std::unique_ptr<Node>& node, const int value) {
-  Count result = 0;
+unsigned long long Treap::Node::count_less_or_equal(const std::unique_ptr<Node>& node, int value) {
+  unsigned long long result = 0;
   const Node* current = node.get();
   while (current) {
     if (value < current->key) {
@@ -162,12 +125,12 @@ Count Treap::Node::count_less_or_equal(const std::unique_ptr<Node>& node, const 
   return result;
 }
 
-Selection Treap::Node::select(const std::unique_ptr<Node>& node, const Count index) {
+std::optional<int> Treap::Node::select(const std::unique_ptr<Node>& node, unsigned long long index) {
   if (!node || index == 0 || index > size(node)) return std::nullopt;
-  Count remaining = index;
+  unsigned long long remaining = index;
   const Node* current = node.get();
   while (current) {
-    const Count left_size = size(current->left);
+    const unsigned long long left_size = size(current->left);
     if (remaining == left_size + 1) return current->key;
     if (remaining <= left_size) {
       current = current->left.get();
@@ -179,59 +142,5 @@ Selection Treap::Node::select(const std::unique_ptr<Node>& node, const Count ind
   return std::nullopt;
 }
 
-Treap::Treap() {
-  static_assert([] {
-    SplitMix64 random;
-    return random() == 0x3254'5d91'd39b'4e63ULL && random() == 0x86aa'ae25'8609'ca2bULL &&
-           random() == 0x3fc7'3a4a'c2c7'4222ULL && random() == 0x4641'9278'3227'2e53ULL;
-  }());
-}
-Treap::~Treap() {
-  Node::clear(root_);
-}
-Treap::Treap(const Treap& other) : root_(Node::clone(other.root_)), random_(other.random_) {}
-Treap& Treap::operator=(const Treap& other) {
-  if (this != &other) {
-    Treap replacement(other);
-    swap(replacement);
-  }
-  return *this;
-}
-Treap::Treap(Treap&& other) noexcept : Treap() {
-  swap(other);
-}
-Treap& Treap::operator=(Treap&& other) noexcept {
-  if (this != &other) {
-    Treap replacement(std::move(other));
-    swap(replacement);
-  }
-  return *this;
-}
-
-void Treap::swap(Treap& other) noexcept {
-  // Paths may contain addresses of root_ and must not survive an ownership transfer.
-  insertion_path_.clear();
-  other.insertion_path_.clear();
-  root_.swap(other.root_);
-  insertion_path_.swap(other.insertion_path_);
-  std::swap(random_, other.random_);
-}
-
-void Treap::insert(const int value) {
-  Node::insert(root_, value, random_, insertion_path_);
-}
-Count Treap::count_less(const int value) const {
-  return Node::count_less(root_, value);
-}
-Count Treap::count_in_open_closed_range(const int left, const int right) const {
-  if (left >= right) return 0;
-  return Node::count_less_or_equal(root_, right) - Node::count_less_or_equal(root_, left);
-}
-Selection Treap::select(const Count one_based_index) const {
-  return Node::select(root_, one_based_index);
-}
-Count Treap::size() const {
-  return Node::size(root_);
-}
 
 }  // namespace rq::structures

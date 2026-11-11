@@ -39,7 +39,7 @@ int run_commands(Set& structure) {
           std::println(stderr, "invalid m command: expected a positive index");
           return kInvalidInputExitCode;
         }
-        const auto result = structure.select(static_cast<rq::structures::Count>(index));
+        const auto result = structure.select(static_cast<unsigned long long>(index));
         if (!result.has_value()) {
           std::println(stderr, "m index is outside the set");
           return kInvalidInputExitCode;

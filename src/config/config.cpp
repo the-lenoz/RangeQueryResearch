@@ -28,7 +28,7 @@ int exit_cli(const CLI::App& app, const CLI::ParseError& error) {
 
 }  // namespace
 
-std::expected<Settings, int> read_command_line(const int argc, char* argv[]) {
+std::expected<Settings, int> read_command_line(int argc, char* argv[]) {
   Settings settings;
   CLI::App app{"Process order-statistic set commands from stdin"};
   add_structure_option(app, settings.structure)->default_str("vector");
@@ -40,7 +40,7 @@ std::expected<Settings, int> read_command_line(const int argc, char* argv[]) {
   return settings;
 }
 
-std::expected<BenchmarkSettings, int> read_benchmark_command_line(const int argc, char* argv[]) {
+std::expected<BenchmarkSettings, int> read_benchmark_command_line(int argc, char* argv[]) {
   BenchmarkSettings settings;
   CLI::App app{"Measure order-statistic set operations from a stdin workload"};
   add_structure_option(app, settings.structure)->required();
@@ -64,7 +64,7 @@ std::expected<BenchmarkSettings, int> read_benchmark_command_line(const int argc
   } catch (const CLI::ParseError& error) {
     return std::unexpected{exit_cli(app, error)};
   }
-  return settings;
+  return {std::move(settings)};
 }
 
 }  // namespace rq

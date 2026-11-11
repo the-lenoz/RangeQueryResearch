@@ -30,7 +30,7 @@ struct Command {
   char kind{};
   int first{};
   int second{};
-  rq::structures::Count index{};
+  unsigned long long index{};
 };
 
 struct WorkloadLayout {
@@ -71,7 +71,7 @@ std::expected<std::vector<Command>, std::string_view> read_commands() {
         if (!(std::cin >> index) || index <= 0) {
           return std::unexpected<std::string_view>{"invalid m command: expected a positive index"};
         }
-        command.index = static_cast<rq::structures::Count>(index);
+        command.index = static_cast<unsigned long long>(index);
         break;
       }
       default:
@@ -93,7 +93,7 @@ std::expected<WorkloadLayout, std::string_view> validate_layout(
   }
   if (settings.mode == BenchmarkMode::insert) {
     if (!std::ranges::all_of(
-            commands, [](const char kind) { return kind == 'k'; }, &Command::kind)) {
+            commands, [](char kind) { return kind == 'k'; }, &Command::kind)) {
       return std::unexpected<std::string_view>{"insert mode accepts only k commands"};
     }
     layout.measured_count = commands.size();
@@ -107,7 +107,7 @@ std::expected<WorkloadLayout, std::string_view> validate_layout(
     }
     if (!std::ranges::all_of(
             commands | std::views::take(settings.setup_count),
-            [](const char kind) { return kind == 'k'; }, &Command::kind)) {
+            [](char kind) { return kind == 'k'; }, &Command::kind)) {
       return std::unexpected<std::string_view>{"dynamic setup accepts only k commands"};
     }
     layout.setup_count = settings.setup_count;
@@ -211,7 +211,7 @@ std::pair<bool, std::uint64_t> query_result(const Set& structure, const Command&
 
 template <rq::structures::OrderStatisticSet Set>
 std::uint64_t validate_queries(const Set& structure, const std::vector<Command>& commands,
-                               const std::size_t setup_count) {
+                               std::size_t setup_count) {
   std::uint64_t checksum = kFnvOffset;
   for (const Command& command : commands | std::views::drop(setup_count)) {
     const auto [has_value, value] = query_result(structure, command);
@@ -227,12 +227,12 @@ void hash_structure_state(std::uint64_t& checksum, const Set& structure, std::ve
 
   hash_record(checksum, static_cast<std::uint8_t>('s'), true, structure.size());
 
-  std::vector<rq::structures::Count> indices{
+  std::vector<unsigned long long> indices{
       1,
-      1 + static_cast<rq::structures::Count>(values.size() / 4),
-      1 + static_cast<rq::structures::Count>(values.size() / 2),
-      1 + static_cast<rq::structures::Count>((3 * values.size()) / 4),
-      static_cast<rq::structures::Count>(values.size()),
+      1 + static_cast<unsigned long long>(values.size() / 4),
+      1 + static_cast<unsigned long long>(values.size() / 2),
+      1 + static_cast<unsigned long long>((3 * values.size()) / 4),
+      static_cast<unsigned long long>(values.size()),
   };
   std::ranges::sort(indices);
   indices.erase(std::ranges::unique(indices).begin(), indices.end());
@@ -263,7 +263,7 @@ std::uint64_t validate_insertions(const Set& structure, const std::vector<Comman
 
 template <rq::structures::OrderStatisticSet Set>
 std::uint64_t validate_dynamic(const Set& measured_structure, const std::vector<Command>& commands,
-                               const std::size_t setup_count) {
+                               std::size_t setup_count) {
   Set replay;
   std::vector<int> values;
   values.reserve(commands.size());
@@ -332,7 +332,7 @@ void run_benchmark(benchmark::State& state, Set& structure, const std::vector<Co
 
 }  // namespace
 
-int main(const int argc, char* argv[]) try {
+int main(int argc, char* argv[]) try {
   const auto settings = rq::read_benchmark_command_line(argc, argv);
   if (!settings) return settings.error();
 

@@ -13,8 +13,6 @@ target_sources(rangequery_modules
       structures/factory/factory.cppm
   PRIVATE
       config/config.cpp
-      structures/ordered_vector/ordered_vector.cpp
-      structures/std_set/std_set.cpp
       structures/avl/avl.cpp
       structures/treap/treap.cpp
       structures/factory/factory.cpp

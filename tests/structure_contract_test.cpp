@@ -82,7 +82,7 @@ void expect_matches_reference(const Set& structure, const std::set<int>& expecte
 
   for (const int value : {std::numeric_limits<int>::min(), -101, -7, -1, 0, 1, 8, 101,
                           std::numeric_limits<int>::max()}) {
-    const auto expected_count = static_cast<rq::structures::Count>(
+    const auto expected_count = static_cast<unsigned long long>(
         std::distance(expected.begin(), expected.lower_bound(value)));
     EXPECT_EQ(structure.count_less(value), expected_count) << "value=" << value;
   }
@@ -95,12 +95,12 @@ void expect_matches_reference(const Set& structure, const std::set<int>& expecte
       EXPECT_EQ(actual, 0ULL) << "range=(" << left << ", " << right << ']';
       continue;
     }
-    const auto expected_count = static_cast<rq::structures::Count>(
+    const auto expected_count = static_cast<unsigned long long>(
         std::distance(expected.upper_bound(left), expected.upper_bound(right)));
     EXPECT_EQ(actual, expected_count) << "range=(" << left << ", " << right << ']';
   }
 
-  for (rq::structures::Count index = 0; index <= expected.size() + 1; ++index) {
+  for (unsigned long long index = 0; index <= expected.size() + 1; ++index) {
     const auto selection = structure.select(index);
     if (index == 0 || index > expected.size()) {
       EXPECT_FALSE(selection.has_value()) << "index=" << index;
@@ -190,7 +190,7 @@ TYPED_TEST(StructureBehaviorTest, EmptySetAnswersEveryQueryWithoutSpecialCases) 
 
   EXPECT_FALSE(structure.select(0).has_value());
   EXPECT_FALSE(structure.select(1).has_value());
-  EXPECT_FALSE(structure.select(std::numeric_limits<rq::structures::Count>::max()).has_value());
+  EXPECT_FALSE(structure.select(std::numeric_limits<unsigned long long>::max()).has_value());
 }
 
 TYPED_TEST(StructureBehaviorTest, RepeatedInsertionsNeverChangeSetCardinality) {
@@ -223,6 +223,8 @@ TYPED_TEST(StructureBehaviorTest, RangeIsOpenOnTheLeftAndClosedOnTheRight) {
       EXPECT_EQ(actual, reference) << "range=(" << left << ", " << right << ']';
     }
   }
+
+  //  if (auto [left, right] : std::views::cartesian_produt(endpoints, endpoints) ) {}
 }
 
 TYPED_TEST(StructureBehaviorTest, RankCountsOnlyStrictlySmallerKeys) {
@@ -233,7 +235,7 @@ TYPED_TEST(StructureBehaviorTest, RankCountsOnlyStrictlySmallerKeys) {
 
   for (const int probe : {std::numeric_limits<int>::min(), -5, -4, -3, -1, 0, 1, 3, 4, 9, 10,
                           std::numeric_limits<int>::max()}) {
-    const auto reference = static_cast<rq::structures::Count>(
+    const auto reference = static_cast<unsigned long long>(
         std::distance(expected.begin(), expected.lower_bound(probe)));
     EXPECT_EQ(structure.count_less(probe), reference) << "probe=" << probe;
   }
@@ -248,14 +250,14 @@ TYPED_TEST(StructureBehaviorTest, SelectUsesOneBasedIndexAcrossTheWholeSet) {
   }
 
   EXPECT_FALSE(structure.select(0).has_value());
-  rq::structures::Count index = 1;
+  unsigned long long index = 1;
   for (const int value : expected) {
     const auto selection = structure.select(index++);
     ASSERT_TRUE(selection.has_value());
     EXPECT_EQ(*selection, value);
   }
   EXPECT_FALSE(structure.select(index).has_value());
-  EXPECT_FALSE(structure.select(std::numeric_limits<rq::structures::Count>::max()).has_value());
+  EXPECT_FALSE(structure.select(std::numeric_limits<unsigned long long>::max()).has_value());
 }
 
 TYPED_TEST(StructureBehaviorTest, HandlesAscendingAndDescendingInsertionOrders) {
@@ -271,7 +273,7 @@ TYPED_TEST(StructureBehaviorTest, HandlesAscendingAndDescendingInsertionOrders) 
 
   expect_matches_reference(ascending, expected);
   expect_matches_reference(descending, expected);
-  for (rq::structures::Count index = 1; index <= expected.size(); ++index) {
+  for (unsigned long long index = 1; index <= expected.size(); ++index) {
     const auto ascending_value = ascending.select(index);
     const auto descending_value = descending.select(index);
     ASSERT_TRUE(ascending_value.has_value());
@@ -300,16 +302,16 @@ TYPED_TEST(StructureBehaviorTest, MatchesStdSetForDeterministicRandomWorkload) {
     const int left = std::min(first, second);
     const int right = std::max(first, second);
 
-    const auto expected_rank = static_cast<rq::structures::Count>(
+    const auto expected_rank = static_cast<unsigned long long>(
         std::distance(expected.begin(), expected.lower_bound(first)));
     EXPECT_EQ(structure.count_less(first), expected_rank) << "probe=" << first;
 
-    const auto expected_range = static_cast<rq::structures::Count>(
+    const auto expected_range = static_cast<unsigned long long>(
         std::distance(expected.upper_bound(left), expected.upper_bound(right)));
     EXPECT_EQ(structure.count_in_open_closed_range(left, right), expected_range)
         << "range=(" << left << ", " << right << ']';
 
-    const auto index = static_cast<rq::structures::Count>(random() % (expected.size() + 2));
+    const auto index = static_cast<unsigned long long>(random() % (expected.size() + 2));
     const auto selection = structure.select(index);
     if (index == 0 || index > expected.size()) {
       EXPECT_FALSE(selection.has_value()) << "index=" << index;
