@@ -1,4 +1,3 @@
-find_package(GTest CONFIG REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 add_executable(rangequery_tests
@@ -12,7 +11,7 @@ target_sources(rangequery_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/src/benchmark/config.cppm
 )
 target_link_libraries(rangequery_tests PRIVATE
-  rangequery_modules CLI11::Module GTest::gtest_main
+  rangequery_modules CLI11::Module GTest::gmock_main GTest::gtest
 )
 
 include(GoogleTest)

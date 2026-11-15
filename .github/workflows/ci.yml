@@ -44,16 +44,23 @@ jobs:
       matrix:
         preset: [debug, release, sanitizers]
     env:
+      CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
       ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Cache dependency sources
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('cmake/*.cmake') }}
+
       - name: Install build tools
         run: |
           apt-get update
-          apt-get install --yes --no-install-recommends libgtest-dev ninja-build python3 python3-pip
+          apt-get install --yes --no-install-recommends ninja-build python3 python3-pip
           python3 -m pip install --break-system-packages --no-cache-dir cmake==4.4.3
 
       - name: Report toolchain

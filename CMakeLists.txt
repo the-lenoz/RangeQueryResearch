@@ -39,6 +39,12 @@ else()
   message(STATUS "clang-format was not found; format targets are unavailable")
 endif()
 
+if(RANGEQUERY_BUILD_TESTS)
+  include(CTest)
+endif()
+
+include(cmake/Dependencies.cmake)
+
 add_subdirectory(src)
 
 if(RANGEQUERY_ENABLE_SANITIZERS)
@@ -55,9 +61,6 @@ if(RANGEQUERY_ENABLE_SANITIZERS)
   )
 endif()
 
-if(RANGEQUERY_BUILD_TESTS)
-  include(CTest)
-  if(BUILD_TESTING)
-    add_subdirectory(tests)
-  endif()
+if(RANGEQUERY_BUILD_TESTS AND BUILD_TESTING)
+  add_subdirectory(tests)
 endif()
