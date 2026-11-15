@@ -12,7 +12,7 @@ target_sources(rangequery_tests PRIVATE
     ${PROJECT_SOURCE_DIR}/src/benchmark/config.cppm
 )
 target_link_libraries(rangequery_tests PRIVATE
-  rangequery_modules CLI11::Module GTest::gtest_main GTest::gmock_main
+  rangequery_modules CLI11::Module GTest::gtest_main
 )
 
 include(GoogleTest)
