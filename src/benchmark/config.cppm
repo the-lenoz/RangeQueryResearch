@@ -14,7 +14,6 @@ import rangequery.structures.kind;
 
 namespace rq_benchmark {
 
-
 export enum class BenchmarkMode { queries, insert, dynamic };
 
 export struct BenchmarkSettings {

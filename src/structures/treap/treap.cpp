@@ -125,7 +125,8 @@ unsigned long long Treap::Node::count_less_or_equal(const std::unique_ptr<Node>&
   return result;
 }
 
-std::optional<int> Treap::Node::select(const std::unique_ptr<Node>& node, unsigned long long index) {
+std::optional<int> Treap::Node::select(const std::unique_ptr<Node>& node,
+                                       unsigned long long index) {
   if (!node || index == 0 || index > size(node)) return std::nullopt;
   unsigned long long remaining = index;
   const Node* current = node.get();
@@ -141,6 +142,5 @@ std::optional<int> Treap::Node::select(const std::unique_ptr<Node>& node, unsign
   }
   return std::nullopt;
 }
-
 
 }  // namespace rq::structures

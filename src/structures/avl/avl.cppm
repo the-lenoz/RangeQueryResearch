@@ -1,8 +1,8 @@
 module;
 
 #include <memory>
-#include <vector>
 #include <optional>
+#include <vector>
 
 export module rangequery.structures.avl;
 

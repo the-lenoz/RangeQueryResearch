@@ -73,8 +73,7 @@ export class Treap final {
     }
   };
   struct Node {
-    Node(int key_value, std::uint64_t priority_value)
-        : key(key_value), priority(priority_value) {}
+    Node(int key_value, std::uint64_t priority_value) : key(key_value), priority(priority_value) {}
 
     int key;
     std::uint64_t priority;
@@ -95,10 +94,8 @@ export class Treap final {
     static bool insert(std::unique_ptr<Node>& node, int value, SplitMix64& random,
                        std::vector<std::unique_ptr<Node>*>& path);
     static unsigned long long count_less(const std::unique_ptr<Node>& node, int value);
-    static unsigned long long count_less_or_equal(const std::unique_ptr<Node>& node,
-                                                  int value);
-    static std::optional<int> select(const std::unique_ptr<Node>& node,
-                                     unsigned long long index);
+    static unsigned long long count_less_or_equal(const std::unique_ptr<Node>& node, int value);
+    static std::optional<int> select(const std::unique_ptr<Node>& node, unsigned long long index);
   };
   static_assert(sizeof(SplitMix64) == sizeof(std::uint64_t));
   std::unique_ptr<Node> root_;

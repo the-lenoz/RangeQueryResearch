@@ -19,7 +19,8 @@ export class OrderedVector final {
     }
   }
   [[nodiscard]] unsigned long long count_less(int value) const {
-    return static_cast<unsigned long long>(std::ranges::lower_bound(values_, value) - values_.begin());
+    return static_cast<unsigned long long>(std::ranges::lower_bound(values_, value) -
+                                           values_.begin());
   }
   [[nodiscard]] unsigned long long count_in_open_closed_range(int left, int right) const {
     if (left >= right) return 0;

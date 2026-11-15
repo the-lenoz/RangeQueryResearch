@@ -6,6 +6,4 @@ module;
 
 module rangequery.structures.std_set;
 
-namespace rq::structures {
-
-}  // namespace rq::structures
+namespace rq::structures {}  // namespace rq::structures

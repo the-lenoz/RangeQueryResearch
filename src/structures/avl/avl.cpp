@@ -36,7 +36,7 @@ std::unique_ptr<AvlTree::Node> AvlTree::Node::clone(const std::unique_ptr<Node>&
   }
   return copy;
 }
-  
+
 void AvlTree::Node::rotate_left(std::unique_ptr<Node>& node) {
   assert(node && node->right);
   auto pivot = std::move(node->right);
